@@ -56,8 +56,8 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("keymap_camera_mode", "KEY_F7");
 	settings->setDefault("keymap_increase_viewing_range_min", "+");
 	settings->setDefault("keymap_decrease_viewing_range_min", "-");
-	settings->setDefault("anaglyph", "false");
-	settings->setDefault("anaglyph_strength", "0.1");
+	settings->setDefault("3d_mode", "none");
+	settings->setDefault("3d_paralax_strength", "0.025");
 	settings->setDefault("aux1_descends", "false");
 	settings->setDefault("doubletap_jump", "false");
 	settings->setDefault("always_fly_fast", "true");
@@ -228,9 +228,6 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("full_block_send_enable_min_time_from_building", "2.0");
 	settings->setDefault("dedicated_server_step", "0.1");
 	settings->setDefault("ignore_world_load_errors", "false");
-	settings->setDefault("congestion_control_aim_rtt", "0.2");
-	settings->setDefault("congestion_control_max_rate", "400");
-	settings->setDefault("congestion_control_min_rate", "10");
 	settings->setDefault("remote_media", "");
 	settings->setDefault("debug_log_level", "2");
 	settings->setDefault("emergequeue_limit_total", "256");
@@ -269,9 +266,9 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("enable_ipv6", "true");
 	settings->setDefault("ipv6_server", "false");
 
-	settings->setDefault("main_menu_script","");
-	settings->setDefault("main_menu_mod_mgr","1");
-	settings->setDefault("main_menu_game_mgr","0");
+	settings->setDefault("main_menu_path", "");
+	settings->setDefault("main_menu_mod_mgr", "1");
+	settings->setDefault("main_menu_game_mgr", "0");
 	settings->setDefault("modstore_download_url", "https://forum.minetest.net/media/");
 	settings->setDefault("modstore_listmods_url", "https://forum.minetest.net/mmdb/mods/");
 	settings->setDefault("modstore_details_url", "https://forum.minetest.net/mmdb/mod/*/");

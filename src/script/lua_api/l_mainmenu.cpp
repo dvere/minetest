@@ -146,22 +146,36 @@ int ModApiMainMenu::l_set_background(lua_State *L)
 	std::string backgroundlevel(luaL_checkstring(L, 1));
 	std::string texturename(luaL_checkstring(L, 2));
 
-	bool retval = false;
+	bool tile_image = false;
+	bool retval     = false;
+	unsigned int minsize = 16;
+
+	if (!lua_isnone(L, 3)) {
+		tile_image = lua_toboolean(L, 3);
+	}
+
+	if (!lua_isnone(L, 4)) {
+		minsize = lua_tonumber(L, 4);
+	}
 
 	if (backgroundlevel == "background") {
-		retval |= engine->setTexture(TEX_LAYER_BACKGROUND,texturename);
+		retval |= engine->setTexture(TEX_LAYER_BACKGROUND, texturename,
+				tile_image, minsize);
 	}
 
 	if (backgroundlevel == "overlay") {
-		retval |= engine->setTexture(TEX_LAYER_OVERLAY,texturename);
+		retval |= engine->setTexture(TEX_LAYER_OVERLAY, texturename,
+				tile_image, minsize);
 	}
 
 	if (backgroundlevel == "header") {
-		retval |= engine->setTexture(TEX_LAYER_HEADER,texturename);
+		retval |= engine->setTexture(TEX_LAYER_HEADER,  texturename,
+				tile_image, minsize);
 	}
 
 	if (backgroundlevel == "footer") {
-		retval |= engine->setTexture(TEX_LAYER_FOOTER,texturename);
+		retval |= engine->setTexture(TEX_LAYER_FOOTER, texturename,
+				tile_image, minsize);
 	}
 
 	lua_pushboolean(L,retval);
@@ -885,7 +899,7 @@ int ModApiMainMenu::l_extract_zip(lua_State *L)
 }
 
 /******************************************************************************/
-int ModApiMainMenu::l_get_scriptdir(lua_State *L)
+int ModApiMainMenu::l_get_mainmenu_path(lua_State *L)
 {
 	GUIEngine* engine = getGuiEngine(L);
 	assert(engine != 0);
@@ -1077,7 +1091,7 @@ void ModApiMainMenu::Initialize(lua_State *L, int top)
 	API_FCT(delete_dir);
 	API_FCT(copy_dir);
 	API_FCT(extract_zip);
-	API_FCT(get_scriptdir);
+	API_FCT(get_mainmenu_path);
 	API_FCT(show_file_open_dialog);
 	API_FCT(get_version);
 	API_FCT(download_file);

@@ -51,6 +51,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/directiontables.h"
 #include "util/pointedthing.h"
 #include "version.h"
+#include "drawscene.h"
+
+extern gui::IGUIEnvironment* guienv;
 
 /*
 	QueuedMeshUpdate
@@ -1787,9 +1790,13 @@ void Client::ProcessData(u8 *data, u32 datasize, u16 sender_peer_id)
 		v2f align        = readV2F1000(is);
 		v2f offset       = readV2F1000(is);
 		v3f world_pos;
+		v2s32 size;
 		try{
 			world_pos    = readV3F1000(is);
 		}catch(SerializationError &e) {};
+		try{
+			size = readV2S32(is);
+		} catch(SerializationError &e) {};
 
 		ClientEvent event;
 		event.type             = CE_HUDADD;
@@ -1805,6 +1812,7 @@ void Client::ProcessData(u8 *data, u32 datasize, u16 sender_peer_id)
 		event.hudadd.align     = new v2f(align);
 		event.hudadd.offset    = new v2f(offset);
 		event.hudadd.world_pos = new v3f(world_pos);
+		event.hudadd.size      = new v2s32(size);
 		m_client_event_queue.push_back(event);
 	}
 	else if(command == TOCLIENT_HUDRM)
@@ -1825,6 +1833,7 @@ void Client::ProcessData(u8 *data, u32 datasize, u16 sender_peer_id)
 		v2f v2fdata;
 		v3f v3fdata;
 		u32 intdata = 0;
+		v2s32 v2s32data;
 		
 		std::string datastring((char *)&data[2], datasize - 2);
 		std::istringstream is(datastring, std::ios_base::binary);
@@ -1839,6 +1848,8 @@ void Client::ProcessData(u8 *data, u32 datasize, u16 sender_peer_id)
 			sdata = deSerializeString(is);
 		else if (stat == HUD_STAT_WORLD_POS)
 			v3fdata = readV3F1000(is);
+		else if (stat == HUD_STAT_SIZE )
+			v2s32data = readV2S32(is);
 		else
 			intdata = readU32(is);
 		
@@ -1850,6 +1861,7 @@ void Client::ProcessData(u8 *data, u32 datasize, u16 sender_peer_id)
 		event.hudchange.v3fdata = new v3f(v3fdata);
 		event.hudchange.sdata   = new std::string(sdata);
 		event.hudchange.data    = intdata;
+		event.hudchange.v2s32data = new v2s32(v2s32data);
 		m_client_event_queue.push_back(event);
 	}
 	else if(command == TOCLIENT_HUD_SET_FLAGS)
@@ -2073,8 +2085,10 @@ void Client::sendChatMessage(const std::wstring &message)
 	
 	// Write length
 	size_t messagesize = message.size();
-	assert(messagesize <= 0xFFFF);
-	writeU16(buf, (u16) (messagesize & 0xFF));
+	if (messagesize > 0xFFFF) {
+		messagesize = 0xFFFF;
+	}
+	writeU16(buf, (u16) messagesize);
 	os.write((char*)buf, 2);
 	
 	// Write string
@@ -2637,10 +2651,6 @@ float Client::mediaReceiveProgress()
 		return 1.0; // downloader only exists when not yet done
 }
 
-void draw_load_screen(const std::wstring &text,
-		IrrlichtDevice* device, gui::IGUIFont* font,
-		float dtime=0 ,int percent=0, bool clouds=true);
-
 void Client::afterContentReceived(IrrlichtDevice *device, gui::IGUIFont* font)
 {
 	infostream<<"Client::afterContentReceived() started"<<std::endl;
@@ -2660,16 +2670,16 @@ void Client::afterContentReceived(IrrlichtDevice *device, gui::IGUIFont* font)
 	infostream<<"- Updating node aliases"<<std::endl;
 	m_nodedef->updateAliases(m_itemdef);
 
-	// Update node textures
+	// Update node textures and assign shaders to each tile
 	infostream<<"- Updating node textures"<<std::endl;
-	m_nodedef->updateTextures(m_tsrc);
+	m_nodedef->updateTextures(m_tsrc, m_shsrc);
 
 	// Preload item textures and meshes if configured to
 	if(g_settings->getBool("preload_item_visuals"))
 	{
 		verbosestream<<"Updating item textures and meshes"<<std::endl;
 		wchar_t* text = wgettext("Item textures...");
-		draw_load_screen(text,device,font,0,0);
+		draw_load_screen(text, device, guienv, font, 0, 0);
 		std::set<std::string> names = m_itemdef->getAll();
 		size_t size = names.size();
 		size_t count = 0;
@@ -2682,7 +2692,7 @@ void Client::afterContentReceived(IrrlichtDevice *device, gui::IGUIFont* font)
 			count++;
 			percent = count*100/size;
 			if (count%50 == 0) // only update every 50 item
-				draw_load_screen(text,device,font,0,percent);
+				draw_load_screen(text, device, guienv, font, 0, percent);
 		}
 		delete[] text;
 	}
