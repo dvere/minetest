@@ -539,7 +539,6 @@ if(BUILD_CLIENT)
 			${minetest_LIBS}
 			${ICONV_LIBRARY}
 		)
-	)
 	else()
 		target_link_libraries(
 			${minetest_LIBS}
