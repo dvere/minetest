@@ -18,6 +18,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include "content_sao.h"
+#include "util/serialize.h"
+#include "util/mathconstants.h"
 #include "collision.h"
 #include "environment.h"
 #include "settings.h"
@@ -29,8 +31,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "player.h"
 #include "scripting_game.h"
 #include "genericobject.h"
-#include "util/serialize.h"
-#include "util/mathconstants.h"
+#include "log.h"
 
 std::map<u16, ServerActiveObject::Factory> ServerActiveObject::m_types;
 
@@ -1027,6 +1028,8 @@ void PlayerSAO::removingFromEnvironment()
 	{
 		m_player->setPlayerSAO(NULL);
 		m_player->peer_id = 0;
+		m_env->savePlayer(m_player->getName());
+		m_env->removePlayer(m_player->getName());
 	}
 }
 

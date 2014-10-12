@@ -42,9 +42,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "biome.h"
 #include "mapgen_v6.h"
 #include "mapgen_v7.h"
-#include "mapgen_indev.h"
 #include "mapgen_singlenode.h"
-#include "mapgen_math.h"
 
 
 class EmergeThread : public JThread
@@ -84,9 +82,7 @@ EmergeManager::EmergeManager(IGameDef *gamedef) {
 	//register built-in mapgens
 	registerMapgen("v6",         new MapgenFactoryV6());
 	registerMapgen("v7",         new MapgenFactoryV7());
-	registerMapgen("indev",      new MapgenFactoryIndev());
 	registerMapgen("singlenode", new MapgenFactorySinglenode());
-	registerMapgen("math",       new MapgenFactoryMath());
 
 	this->ndef     = gamedef->getNodeDefManager();
 	this->biomedef = new BiomeDefManager();
@@ -101,7 +97,7 @@ EmergeManager::EmergeManager(IGameDef *gamedef) {
 
 	// if unspecified, leave a proc for the main thread and one for
 	// some other misc thread
-	int nthreads = 0;
+	s16 nthreads = 0;
 	if (!g_settings->getS16NoEx("num_emerge_threads", nthreads))
 		nthreads = porting::getNumberOfProcessors() - 2;
 	if (nthreads < 1)
@@ -121,8 +117,8 @@ EmergeManager::EmergeManager(IGameDef *gamedef) {
 	if (qlimit_generate < 1)
 		qlimit_generate = 1;
 
-	for (int i = 0; i != nthreads; i++)
-		emergethread.push_back(new EmergeThread((Server *)gamedef, i));
+	for (s16 i = 0; i < nthreads; i++)
+		emergethread.push_back(new EmergeThread((Server *) gamedef, i));
 
 	infostream << "EmergeManager: using " << nthreads << " threads" << std::endl;
 }
@@ -156,6 +152,11 @@ EmergeManager::~EmergeManager() {
 	mglist.clear();
 
 	delete biomedef;
+
+	if (params.sparams) {
+		delete params.sparams;
+		params.sparams = NULL;
+	}
 }
 
 

@@ -27,56 +27,41 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "log.h"
 #include "main.h" // for g_settings
 #include "settings.h"
-#include "version.h"
 #include "httpfetch.h"
 #include "porting.h"
 
-Json::Value                 fetchJsonValue(const std::string &url,
-                                           struct curl_slist *chunk) {
-#if USE_CURL
+Json::Value fetchJsonValue(const std::string &url,
+		std::vector<std::string> *extra_headers)
+{
+	HTTPFetchRequest fetch_request;
+	HTTPFetchResult fetch_result;
+	fetch_request.url = url;
+	fetch_request.caller = HTTPFETCH_SYNC;
 
-	HTTPFetchRequest fetchrequest;
-	HTTPFetchResult fetchresult;
-	fetchrequest.url = url;
-	fetchrequest.caller = HTTPFETCH_SYNC;
+	if (extra_headers != NULL)
+		fetch_request.extra_headers = *extra_headers;
 
-	struct curl_slist* runptr = chunk;
-	while(runptr) {
-		fetchrequest.extra_headers.push_back(runptr->data);
-		runptr = runptr->next;
-	}
-	httpfetch_sync(fetchrequest,fetchresult);
+	httpfetch_sync(fetch_request, fetch_result);
 
-	if (!fetchresult.succeeded) {
+	if (!fetch_result.succeeded) {
 		return Json::Value();
 	}
 	Json::Value root;
 	Json::Reader reader;
-	std::istringstream stream(fetchresult.data);
+	std::istringstream stream(fetch_result.data);
 
-	if (!reader.parse( stream, root ) )
-	{
+	if (!reader.parse(stream, root)) {
 		errorstream << "URL: " << url << std::endl;
 		errorstream << "Failed to parse json data " << reader.getFormattedErrorMessages();
-		errorstream << "data: \"" << fetchresult.data << "\"" << std::endl;
+		errorstream << "data: \"" << fetch_result.data << "\"" << std::endl;
 		return Json::Value();
 	}
 
-	if (root.isArray()) {
-		return root;
-	}
-	if ((root["list"].isArray())) {
-		return root["list"];
-	}
-	else {
-		return root;
-	}
-#endif
-	return Json::Value();
+	return root;
 }
 
 std::vector<ModStoreMod>    readModStoreList(Json::Value& modlist) {
-	std::vector<ModStoreMod> retval;
+		std::vector<ModStoreMod> retval;
 
 	if (modlist.isArray()) {
 		for (unsigned int i = 0; i < modlist.size(); i++)

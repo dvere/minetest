@@ -17,13 +17,19 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "client.h"
 #include <iostream>
 #include <algorithm>
-#include "clientserver.h"
-#include "jthread/jmutexautolock.h"
-#include "main.h"
 #include <sstream>
+#include <IFileSystem.h>
+#include "jthread/jmutexautolock.h"
+#include "util/directiontables.h"
+#include "util/pointedthing.h"
+#include "util/serialize.h"
+#include "util/string.h"
+#include "strfnd.h"
+#include "client.h"
+#include "clientserver.h"
+#include "main.h"
 #include "filesys.h"
 #include "porting.h"
 #include "mapsector.h"
@@ -37,19 +43,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "nodedef.h"
 #include "itemdef.h"
 #include "shader.h"
-#include <IFileSystem.h>
 #include "base64.h"
 #include "clientmap.h"
 #include "clientmedia.h"
 #include "sound.h"
-#include "util/string.h"
 #include "IMeshCache.h"
 #include "serialization.h"
-#include "util/serialize.h"
 #include "config.h"
-#include "cmake_config_githash.h"
-#include "util/directiontables.h"
-#include "util/pointedthing.h"
 #include "version.h"
 #include "drawscene.h"
 
@@ -270,9 +270,7 @@ Client::Client(
 		Add local player
 	*/
 	{
-		Player *player = new LocalPlayer(this);
-
-		player->updateName(playername);
+		Player *player = new LocalPlayer(this, playername);
 
 		m_env.addPlayer(player);
 	}
@@ -2197,8 +2195,8 @@ void Client::sendReady()
 	writeU8(os,VERSION_PATCH_ORIG);
 	writeU8(os,0);
 
-	writeU16(os,strlen(CMAKE_VERSION_GITHASH));
-	os.write(CMAKE_VERSION_GITHASH,strlen(CMAKE_VERSION_GITHASH));
+	writeU16(os,strlen(minetest_version_hash));
+	os.write(minetest_version_hash,strlen(minetest_version_hash));
 
 	// Make data buffer
 	std::string s = os.str();
@@ -2476,6 +2474,15 @@ int Client::getCrackLevel()
 	return m_crack_level;
 }
 
+void Client::setHighlighted(v3s16 pos, bool show_hud)
+{
+	m_show_hud = show_hud;
+	v3s16 old_highlighted_pos = m_highlighted_pos;
+	m_highlighted_pos = pos;
+	addUpdateMeshTaskForNode(old_highlighted_pos, false, true);
+	addUpdateMeshTaskForNode(m_highlighted_pos, false, true);
+}
+
 void Client::setCrack(int level, v3s16 pos)
 {
 	int old_crack_level = m_crack_level;
@@ -2530,16 +2537,14 @@ void Client::typeChatMessage(const std::wstring &message)
 	// Show locally
 	if (message[0] == L'/')
 	{
-		m_chat_queue.push_back(
-				(std::wstring)L"issued command: "+message);
+		m_chat_queue.push_back((std::wstring)L"issued command: " + message);
 	}
 	else
 	{
 		LocalPlayer *player = m_env.getLocalPlayer();
 		assert(player != NULL);
 		std::wstring name = narrow_to_wide(player->getName());
-		m_chat_queue.push_back(
-				(std::wstring)L"<"+name+L"> "+message);
+		m_chat_queue.push_back((std::wstring)L"<" + name + L"> " + message);
 	}
 }
 
@@ -2548,22 +2553,23 @@ void Client::addUpdateMeshTask(v3s16 p, bool ack_to_server, bool urgent)
 	MapBlock *b = m_env.getMap().getBlockNoCreateNoEx(p);
 	if(b == NULL)
 		return;
-	
+
 	/*
 		Create a task to update the mesh of the block
 	*/
-	
+
 	MeshMakeData *data = new MeshMakeData(this);
-	
+
 	{
 		//TimeTaker timer("data fill");
 		// Release: ~0ms
 		// Debug: 1-6ms, avg=2ms
 		data->fill(b);
 		data->setCrack(m_crack_level, m_crack_pos);
+		data->setHighlighted(m_highlighted_pos, m_show_hud);
 		data->setSmoothLighting(g_settings->getBool("smooth_lighting"));
 	}
-	
+
 	// Add task to queue
 	m_mesh_update_thread.m_queue_in.addBlock(p, data, ack_to_server, urgent);
 }
@@ -2721,6 +2727,34 @@ float Client::getAvgRate(void)
 {
 	return ( m_con.getLocalStat(con::AVG_INC_RATE) +
 			m_con.getLocalStat(con::AVG_DL_RATE));
+}
+
+void Client::makeScreenshot(IrrlichtDevice *device)
+{
+	irr::video::IVideoDriver *driver = device->getVideoDriver();
+	irr::video::IImage* const raw_image = driver->createScreenShot();
+	if (raw_image) {
+		irr::video::IImage* const image = driver->createImage(video::ECF_R8G8B8, 
+			raw_image->getDimension());
+
+		if (image) {
+			raw_image->copyTo(image);
+			irr::c8 filename[256];
+			snprintf(filename, sizeof(filename), "%s" DIR_DELIM "screenshot_%u.png",
+				 g_settings->get("screenshot_path").c_str(),
+				 device->getTimer()->getRealTime());
+			std::stringstream sstr;
+			if (driver->writeImageToFile(image, filename)) {
+				sstr << "Saved screenshot to '" << filename << "'";
+			} else {
+				sstr << "Failed to save screenshot '" << filename << "'";
+			}
+			m_chat_queue.push_back(narrow_to_wide(sstr.str()));
+			infostream << sstr << std::endl;
+			image->drop();
+		}
+		raw_image->drop();
+	}
 }
 
 // IGameDef interface

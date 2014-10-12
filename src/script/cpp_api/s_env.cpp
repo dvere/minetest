@@ -61,13 +61,16 @@ void ScriptApiEnv::environment_Step(float dtime)
 void ScriptApiEnv::player_event(ServerActiveObject* player, std::string type)
 {
 	SCRIPTAPI_PRECHECKHEADER
+	
+	if (player == NULL)
+		return;
 
 	// Get minetest.registered_playerevents
 	lua_getglobal(L, "minetest");
 	lua_getfield(L, -1, "registered_playerevents");
 
 	// Call callbacks
-	objectrefGetOrCreate(player);   // player
+	objectrefGetOrCreate(L, player);   // player
 	lua_pushstring(L,type.c_str()); // event type
 	try {
 		script_run_callbacks(L, 2, RUN_CALLBACKS_MODE_FIRST);
