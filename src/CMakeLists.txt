@@ -172,7 +172,7 @@ else()
 	else()
 		# librt is not guaranteed
 		check_library_exists(rt clock_gettime "" HAVE_LIBRT)
-		if (HAVE_LIBRT)
+		if(HAVE_LIBRT)
 			set(PLATFORM_LIBS -lrt ${PLATFORM_LIBS})
 		endif()
 	endif(APPLE)
@@ -595,6 +595,7 @@ if(BUILD_SERVER)
                         ${minetest_LIBS}
 			${ICONV_LIBRARIES}
 			${LIBINTL_LIBRARIES}
+		)
 	endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
 	if (USE_LEVELDB)
 		target_link_libraries(${PROJECT_NAME}server ${LEVELDB_LIBRARY})
