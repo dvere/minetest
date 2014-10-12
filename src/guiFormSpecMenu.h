@@ -28,10 +28,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "inventorymanager.h"
 #include "modalMenu.h"
 #include "guiTable.h"
+#include "clientserver.h"
 
 class IGameDef;
 class InventoryManager;
 class ISimpleTextureSource;
+class Client;
 
 typedef enum {
 	f_Button,
@@ -39,6 +41,7 @@ typedef enum {
 	f_TabHeader,
 	f_CheckBox,
 	f_DropDown,
+	f_ScrollBar,
 	f_Unknown
 } FormspecFieldType;
 
@@ -150,7 +153,7 @@ class GUIFormSpecMenu : public GUIModalMenu
 		{
 		}
 		FieldSpec(const std::wstring &name, const std::wstring &label,
-		          const std::wstring &fdeflt, int id) :
+				const std::wstring &fdeflt, int id) :
 			fname(name),
 			flabel(label),
 			fdefault(fdeflt),
@@ -159,7 +162,6 @@ class GUIFormSpecMenu : public GUIModalMenu
 			send = false;
 			ftype = f_Unknown;
 			is_exit = false;
-			tooltip="";
 		}
 		std::wstring fname;
 		std::wstring flabel;
@@ -169,7 +171,6 @@ class GUIFormSpecMenu : public GUIModalMenu
 		FormspecFieldType ftype;
 		bool is_exit;
 		core::rect<s32> rect;
-		std::string tooltip;
 	};
 
 	struct BoxDrawSpec {
@@ -184,6 +185,22 @@ class GUIFormSpecMenu : public GUIModalMenu
 		irr::video::SColor color;
 	};
 
+	struct TooltipSpec {
+		TooltipSpec()
+		{
+		}
+		TooltipSpec(std::string a_tooltip, irr::video::SColor a_bgcolor,
+				irr::video::SColor a_color):
+			tooltip(a_tooltip),
+			bgcolor(a_bgcolor),
+			color(a_color)
+		{
+		}
+		std::string tooltip;
+		irr::video::SColor bgcolor;
+		irr::video::SColor color;
+	};
+
 public:
 	GUIFormSpecMenu(irr::IrrlichtDevice* dev,
 			gui::IGUIElement* parent, s32 id,
@@ -193,7 +210,8 @@ public:
 			ISimpleTextureSource *tsrc,
 			IFormSource* fs_src,
 			TextDest* txt_dst,
-			GUIFormSpecMenu** ext_ptr
+			GUIFormSpecMenu** ext_ptr,
+			Client* client
 			);
 
 	~GUIFormSpecMenu();
@@ -256,8 +274,9 @@ public:
 
 	GUITable* getTable(std::wstring tablename);
 
-	static bool parseColor(const std::string &value,
-			video::SColor &color, bool quiet);
+#ifdef __ANDROID__
+	bool getAndroidUIInput();
+#endif
 
 protected:
 	v2s32 getBasePos() const
@@ -274,9 +293,11 @@ protected:
 	InventoryManager *m_invmgr;
 	IGameDef *m_gamedef;
 	ISimpleTextureSource *m_tsrc;
+	Client *m_client;
 
 	std::string m_formspec_string;
 	InventoryLocation m_current_inventory_location;
+
 
 	std::vector<ListDrawSpec> m_inventorylists;
 	std::vector<ImageDrawSpec> m_backgrounds;
@@ -286,6 +307,8 @@ protected:
 	std::vector<FieldSpec> m_fields;
 	std::vector<std::pair<FieldSpec,GUITable*> > m_tables;
 	std::vector<std::pair<FieldSpec,gui::IGUICheckBox*> > m_checkboxes;
+	std::map<std::wstring, TooltipSpec> m_tooltips;
+	std::vector<std::pair<FieldSpec,gui::IGUIScrollBar*> > m_scrollbars;
 
 	ItemSpec *m_selected_item;
 	u32 m_selected_amount;
@@ -298,7 +321,13 @@ protected:
 	InventoryLocation m_selected_content_guess_inventory;
 
 	v2s32 m_pointer;
+	v2s32 m_old_pointer;  // Mouse position after previous mouse event
 	gui::IGUIStaticText *m_tooltip_element;
+
+	u32 m_tooltip_show_delay;
+	s32 m_hoovered_time;
+	s32 m_old_tooltip_id;
+	std::string m_old_tooltip;
 
 	bool m_allowclose;
 	bool m_lock;
@@ -311,14 +340,18 @@ protected:
 	video::SColor m_slotbg_n;
 	video::SColor m_slotbg_h;
 	video::SColor m_slotbordercolor;
+	video::SColor m_default_tooltip_bgcolor;
+	video::SColor m_default_tooltip_color;
+
 private:
-	IFormSource*      m_form_src;
-	TextDest*         m_text_dst;
-	GUIFormSpecMenu** m_ext_ptr;
+	IFormSource      *m_form_src;
+	TextDest         *m_text_dst;
+	GUIFormSpecMenu **m_ext_ptr;
+	gui::IGUIFont    *m_font;
+	unsigned int      m_formspec_version;
 
 	typedef struct {
 		v2s32 size;
-		s32 helptext_h;
 		core::rect<s32> rect;
 		v2s32 basepos;
 		int bp_set;
@@ -366,6 +399,9 @@ private:
 	void parseBox(parserData* data,std::string element);
 	void parseBackgroundColor(parserData* data,std::string element);
 	void parseListColors(parserData* data,std::string element);
+	void parseTooltip(parserData* data,std::string element);
+	bool parseVersionDirect(std::string data);
+	void parseScrollBar(parserData* data, std::string element);
 
 	/**
 	 * check if event is part of a double click
@@ -380,6 +416,16 @@ private:
 		s32 time;
 	};
 	clickpos m_doubleclickdetect[2];
+
+	int m_btn_height;
+
+	std::wstring getLabelByID(s32 id);
+	std::wstring getNameByID(s32 id);
+#ifdef __ANDROID__
+	v2s32 m_down_pos;
+	std::wstring m_JavaDialogFieldName;
+#endif
+
 };
 
 class FormspecFormSource: public IFormSource
@@ -394,7 +440,7 @@ public:
 	{}
 
 	void setForm(std::string formspec) {
-		m_formspec = formspec;
+		m_formspec = FORMSPEC_VERSION_STRING + formspec;
 	}
 
 	std::string getForm()

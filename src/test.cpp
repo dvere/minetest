@@ -390,12 +390,14 @@ struct TestSettings: public TestBase
 	{
 		Settings s;
 		// Test reading of settings
-		s.parseConfigLine("leet = 1337");
-		s.parseConfigLine("leetleet = 13371337");
-		s.parseConfigLine("leetleet_neg = -13371337");
-		s.parseConfigLine("floaty_thing = 1.1");
-		s.parseConfigLine("stringy_thing = asd /( ¤%&(/\" BLÖÄRP");
-		s.parseConfigLine("coord = (1, 2, 4.5)");
+		std::istringstream is(
+			"leet = 1337\n"
+			"leetleet = 13371337\n"
+			"leetleet_neg = -13371337\n"
+			"floaty_thing = 1.1\n"
+			"stringy_thing = asd /( ¤%&(/\" BLÖÄRP\n"
+			"coord = (1, 2, 4.5)");
+		s.parseConfigLines(is);
 		UASSERT(s.getS32("leet") == 1337);
 		UASSERT(s.getS16("leetleet") == 32767);
 		UASSERT(s.getS16("leetleet_neg") == -32768);
@@ -1517,22 +1519,29 @@ struct TestSocket: public TestBase
 			const char sendbuffer[] = "hello world!";
 			IPv6AddressBytes bytes;
 			bytes.bytes[15] = 1;
-			socket6.Send(Address(&bytes, port), sendbuffer, sizeof(sendbuffer));
+			
+			try {
+				socket6.Send(Address(&bytes, port), sendbuffer, sizeof(sendbuffer));
 
-			sleep_ms(50);
+				sleep_ms(50);
 
-			char rcvbuffer[256];
-			memset(rcvbuffer, 0, sizeof(rcvbuffer));
-			Address sender;
-			for(;;)
-			{
-				int bytes_read = socket6.Receive(sender, rcvbuffer, sizeof(rcvbuffer));
-				if(bytes_read < 0)
-					break;
+				char rcvbuffer[256];
+				memset(rcvbuffer, 0, sizeof(rcvbuffer));
+				Address sender;
+				for(;;)
+				{
+					int bytes_read = socket6.Receive(sender, rcvbuffer, sizeof(rcvbuffer));
+					if(bytes_read < 0)
+						break;
+				}
+				//FIXME: This fails on some systems
+				UASSERT(strncmp(sendbuffer, rcvbuffer, sizeof(sendbuffer))==0);
+				UASSERT(memcmp(sender.getAddress6().sin6_addr.s6_addr, Address(&bytes, 0).getAddress6().sin6_addr.s6_addr, 16) == 0);
 			}
-			//FIXME: This fails on some systems
-			UASSERT(strncmp(sendbuffer, rcvbuffer, sizeof(sendbuffer))==0);
-			UASSERT(memcmp(sender.getAddress6().sin6_addr.s6_addr, Address(&bytes, 0).getAddress6().sin6_addr.s6_addr, 16) == 0);
+			catch (SendFailedException e) {
+				errorstream << "IPv6 support enabled but not available!" << std::endl;
+ 			}
+			
 		}
 
 		// IPv4 socket test

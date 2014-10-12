@@ -20,12 +20,16 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef UTIL_STRING_HEADER
 #define UTIL_STRING_HEADER
 
-#include "../irrlichttypes.h"
+#include "irrlichttypes_bloated.h"
 #include <stdlib.h>
 #include <string>
 #include <cstring>
 #include <vector>
 #include <sstream>
+#include <cctype>
+
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 
 struct FlagDesc {
 	const char *name;
@@ -104,6 +108,16 @@ inline std::vector<std::wstring> str_split(const std::wstring &str, wchar_t deli
 	std::vector<std::wstring> parts;
 	std::wstringstream sstr(str);
 	std::wstring part;
+	while(std::getline(sstr, part, delimiter))
+		parts.push_back(part);
+	return parts;
+}
+
+inline std::vector<std::string> str_split(const std::string &str, char delimiter) {
+
+	std::vector<std::string> parts;
+	std::stringstream sstr(str);
+	std::string part;
 	while(std::getline(sstr, part, delimiter))
 		parts.push_back(part);
 	return parts;
@@ -316,14 +330,26 @@ inline std::string unescape_string(std::string &s)
 	return res;
 }
 
+inline bool is_number(const std::string& tocheck)
+{
+	std::string::const_iterator iter = tocheck.begin();
+
+	while (iter != tocheck.end() && std::isdigit(*iter)) {
+		++iter;
+	}
+
+	return ((!tocheck.empty()) && (iter == tocheck.end()));
+}
+
 std::string translatePassword(std::string playername, std::wstring password);
 std::string urlencode(std::string str);
 std::string urldecode(std::string str);
-u32 readFlagString(std::string str, FlagDesc *flagdesc, u32 *flagmask);
-std::string writeFlagString(u32 flags, FlagDesc *flagdesc, u32 flagmask);
+u32 readFlagString(std::string str, const FlagDesc *flagdesc, u32 *flagmask);
+std::string writeFlagString(u32 flags, const FlagDesc *flagdesc, u32 flagmask);
 size_t mystrlcpy(char *dst, const char *src, size_t size);
 char *mystrtok_r(char *s, const char *sep, char **lasts);
 u64 read_seed(const char *str);
+bool parseColorString(const std::string &value, video::SColor &color, bool quiet);
 
 #endif
 

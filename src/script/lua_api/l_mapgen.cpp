@@ -22,12 +22,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "lua_api/l_vmanip.h"
 #include "common/c_converter.h"
 #include "common/c_content.h"
+#include "util/serialize.h"
 #include "server.h"
 #include "environment.h"
 #include "biome.h"
 #include "emerge.h"
 #include "mapgen_v7.h"
 #include "main.h"
+#include "log.h"
 
 
 struct EnumString ModApiMapgen::es_BiomeTerrainType[] =
@@ -76,6 +78,31 @@ struct EnumString ModApiMapgen::es_Rotation[] =
 	{ROTATE_RAND, "random"},
 	{0, NULL},
 };
+
+
+static void read_schematic_replacements(lua_State *L, DecoSchematic *dschem, int index)
+{
+	lua_pushnil(L);
+	while (lua_next(L, index)) {
+		// key at index -2 and value at index -1
+		std::string replace_from;
+		std::string replace_to;
+		if (lua_istable(L, -1)) {  // Old {{"x", "y"}, ...} format
+			lua_rawgeti(L, -1, 1);
+			replace_from = lua_tostring(L, -1);
+			lua_pop(L, 1);
+			lua_rawgeti(L, -1, 2);
+			replace_to = lua_tostring(L, -1);
+			lua_pop(L, 1);
+		} else {  // New {x = "y", ...} format
+			replace_from = lua_tostring(L, -2);
+			replace_to = lua_tostring(L, -1);
+		}
+		dschem->replacements[replace_from] = replace_to;
+		// removes value, keeps key for next iteration
+		lua_pop(L, 1);
+	}
+}
 
 
 // get_mapgen_object(objectname)
@@ -414,20 +441,7 @@ int ModApiMapgen::l_register_decoration(lua_State *L)
 
 			lua_getfield(L, index, "replacements");
 			if (lua_istable(L, -1)) {
-				int i = lua_gettop(L);
-				lua_pushnil(L);
-				while (lua_next(L, i) != 0) {
-					// key at index -2 and value at index -1
-					lua_rawgeti(L, -1, 1);
-					std::string replace_from = lua_tostring(L, -1);
-					lua_pop(L, 1);
-					lua_rawgeti(L, -1, 2);
-					std::string replace_to = lua_tostring(L, -1);
-					lua_pop(L, 1);
-					dschem->replacements[replace_from] = replace_to;
-					// removes value, keeps key for next iteration
-					lua_pop(L, 1);
-				}
+				read_schematic_replacements(L, dschem, lua_gettop(L));
 			}
 			lua_pop(L, 1);
 
@@ -602,19 +616,7 @@ int ModApiMapgen::l_place_schematic(lua_State *L)
 	dschem.rotation = (Rotation)rot;
 
 	if (lua_istable(L, 4)) {
-		lua_pushnil(L);
-		while (lua_next(L, 4) != 0) {
-			// key at index -2 and value at index -1
-			lua_rawgeti(L, -1, 1);
-			std::string replace_from = lua_tostring(L, -1);
-			lua_pop(L, 1);
-			lua_rawgeti(L, -1, 2);
-			std::string replace_to = lua_tostring(L, -1);
-			lua_pop(L, 1);
-			dschem.replacements[replace_from] = replace_to;
-			// removes value, keeps key for next iteration
-			lua_pop(L, 1);
-		}
+		read_schematic_replacements(L, &dschem, 4);
 	}
 
 	bool force_placement = true;

@@ -18,14 +18,20 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include "player.h"
+
+#include <fstream>
+#include "util/numeric.h"
 #include "hud.h"
 #include "constants.h"
 #include "gamedef.h"
 #include "settings.h"
 #include "content_sao.h"
-#include "util/numeric.h"
+#include "filesys.h"
+#include "log.h"
+#include "porting.h"  // strlcpy
 
-Player::Player(IGameDef *gamedef):
+
+Player::Player(IGameDef *gamedef, const char *name):
 	touching_ground(false),
 	in_liquid(false),
 	in_liquid_stable(false),
@@ -48,20 +54,17 @@ Player::Player(IGameDef *gamedef):
 	m_speed(0,0,0),
 	m_position(0,0,0),
 	m_collisionbox(-BS*0.30,0.0,-BS*0.30,BS*0.30,BS*1.75,BS*0.30),
-	m_last_pitch(0),
-	m_last_yaw(0),
-	m_last_pos(0,0,0),
-	m_last_hp(PLAYER_MAX_HP),
-	m_last_inventory(gamedef->idef())
+	m_dirty(false)
 {
-	updateName("<not set>");
+	strlcpy(m_name, name, PLAYERNAME_SIZE);
+
 	inventory.clear();
 	inventory.addList("main", PLAYER_INVENTORY_SIZE);
 	InventoryList *craft = inventory.addList("craft", 9);
 	craft->setWidth(3);
 	inventory.addList("craftpreview", 1);
 	inventory.addList("craftresult", 1);
-	m_last_inventory = inventory;
+	inventory.setModified(false);
 
 	// Can be redefined via Lua
 	inventory_formspec = "size[8,7.5]"
@@ -100,6 +103,7 @@ Player::Player(IGameDef *gamedef):
 
 Player::~Player()
 {
+	clearHud();
 }
 
 // Horizontal acceleration (X and Z), Y direction is ignored
@@ -194,23 +198,16 @@ void Player::serialize(std::ostream &os)
 void Player::deSerialize(std::istream &is, std::string playername)
 {
 	Settings args;
-	
-	for(;;)
-	{
-		if(is.eof())
-			throw SerializationError
-					(("Player::deSerialize(): PlayerArgsEnd of player \"" + playername + "\" not found").c_str());
-		std::string line;
-		std::getline(is, line);
-		std::string trimmedline = trim(line);
-		if(trimmedline == "PlayerArgsEnd")
-			break;
-		args.parseConfigLine(line);
+
+	if (!args.parseConfigLines(is, "PlayerArgsEnd")) {
+		throw SerializationError("PlayerArgsEnd of player " +
+				playername + " not found!");
 	}
 
+	m_dirty = true;
 	//args.getS32("version"); // Version field value not used
 	std::string name = args.get("name");
-	updateName(name.c_str());
+	strlcpy(m_name, name.c_str(), PLAYERNAME_SIZE);
 	setPitch(args.getFloat("pitch"));
 	setYaw(args.getFloat("yaw"));
 	setPosition(args.getV3F("position"));
@@ -240,9 +237,6 @@ void Player::deSerialize(std::istream &is, std::string playername)
 			inventory.getList("craftresult")->changeItem(0, ItemStack());
 		}
 	}
-
-	// Set m_last_*
-	checkModified();
 }
 
 u32 Player::addHud(HudElement *toadd)
@@ -283,6 +277,56 @@ void Player::clearHud()
 	}
 }
 
+
+void RemotePlayer::save(std::string savedir)
+{
+	/*
+	 * We have to open all possible player files in the players directory
+	 * and check their player names because some file systems are not
+	 * case-sensitive and player names are case-sensitive.
+	 */
+
+	// A player to deserialize files into to check their names
+	RemotePlayer testplayer(m_gamedef, "");
+
+	savedir += DIR_DELIM;
+	std::string path = savedir + m_name;
+	for (u32 i = 0; i < PLAYER_FILE_ALTERNATE_TRIES; i++) {
+		if (!fs::PathExists(path)) {
+			// Open file and serialize
+			std::ostringstream ss(std::ios_base::binary);
+			serialize(ss);
+			if (!fs::safeWriteToFile(path, ss.str())) {
+				infostream << "Failed to write " << path << std::endl;
+			}
+			setModified(false);
+			return;
+		}
+		// Open file and deserialize
+		std::ifstream is(path.c_str(), std::ios_base::binary);
+		if (!is.good()) {
+			infostream << "Failed to open " << path << std::endl;
+			return;
+		}
+		testplayer.deSerialize(is, path);
+		is.close();
+		if (strcmp(testplayer.getName(), m_name) == 0) {
+			// Open file and serialize
+			std::ostringstream ss(std::ios_base::binary);
+			serialize(ss);
+			if (!fs::safeWriteToFile(path, ss.str())) {
+				infostream << "Failed to write " << path << std::endl;
+			}
+			setModified(false);
+			return;
+		}
+		path = savedir + m_name + itos(i);
+	}
+
+	infostream << "Didn't find free file for player " << m_name << std::endl;
+	return;
+}
+
 /*
 	RemotePlayer
 */
@@ -292,3 +336,4 @@ void RemotePlayer::setPosition(const v3f &position)
 	if(m_sao)
 		m_sao->setBasePosition(position);
 }
+

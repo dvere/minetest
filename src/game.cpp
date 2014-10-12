@@ -30,8 +30,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "server.h"
 #include "guiPasswordChange.h"
 #include "guiVolumeChange.h"
+#include "guiKeyChangeMenu.h"
 #include "guiFormSpecMenu.h"
-#include "guiTextInputMenu.h"
 #include "tool.h"
 #include "guiChatConsole.h"
 #include "config.h"
@@ -70,6 +70,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "util/pointedthing.h"
 #include "drawscene.h"
 #include "content_cao.h"
+
+#ifdef HAVE_TOUCHSCREENGUI
+#include "touchscreengui.h"
+#endif
 
 /*
 	Text input system
@@ -145,6 +149,11 @@ struct LocalFormspecHandler : public TextDest
 		if (m_formname == "MT_PAUSE_MENU") {
 			if (fields.find("btn_sound") != fields.end()) {
 				g_gamecallback->changeVolume();
+				return;
+			}
+
+			if (fields.find("btn_key_config") != fields.end()) {
+				g_gamecallback->keyConfig();
 				return;
 			}
 
@@ -404,14 +413,16 @@ PointedThing getPointedThing(Client *client, v3f player_position,
 				mindistance = distance;
 
 				hilightboxes.clear();
-				for(std::vector<aabb3f>::const_iterator
-						i2 = boxes.begin();
-						i2 != boxes.end(); i2++)
-				{
-					aabb3f box = *i2;
-					box.MinEdge += npf + v3f(-d,-d,-d) - intToFloat(camera_offset, BS);
-					box.MaxEdge += npf + v3f(d,d,d) - intToFloat(camera_offset, BS);
-					hilightboxes.push_back(box);
+				if (!g_settings->getBool("enable_node_highlighting")) {
+					for(std::vector<aabb3f>::const_iterator
+							i2 = boxes.begin();
+							i2 != boxes.end(); i2++)
+					{
+						aabb3f box = *i2;
+						box.MinEdge += npf + v3f(-d,-d,-d) - intToFloat(camera_offset, BS);
+						box.MaxEdge += npf + v3f(d,d,d) - intToFloat(camera_offset, BS);
+						hilightboxes.push_back(box);
+					}
 				}
 			}
 		}
@@ -928,12 +939,12 @@ bool nodePlacementPrediction(Client &client,
 static inline void create_formspec_menu(GUIFormSpecMenu** cur_formspec,
 		InventoryManager *invmgr, IGameDef *gamedef,
 		IWritableTextureSource* tsrc, IrrlichtDevice * device,
-		IFormSource* fs_src, TextDest* txt_dest
+		IFormSource* fs_src, TextDest* txt_dest, Client* client
 		) {
 
 	if (*cur_formspec == 0) {
 		*cur_formspec = new GUIFormSpecMenu(device, guiroot, -1, &g_menumgr,
-				invmgr, gamedef, tsrc, fs_src, txt_dest, cur_formspec );
+				invmgr, gamedef, tsrc, fs_src, txt_dest, cur_formspec, client);
 		(*cur_formspec)->doPause = false;
 		(*cur_formspec)->drop();
 	}
@@ -943,13 +954,20 @@ static inline void create_formspec_menu(GUIFormSpecMenu** cur_formspec,
 	}
 }
 
+#ifdef __ANDROID__
+#define SIZE_TAG "size[11,5.5]"
+#else
+#define SIZE_TAG "size[11,5.5,true]"
+#endif
+
 static void show_chat_menu(GUIFormSpecMenu** cur_formspec,
 		InventoryManager *invmgr, IGameDef *gamedef,
 		IWritableTextureSource* tsrc, IrrlichtDevice * device,
 		Client* client, std::string text)
 {
 	std::string formspec =
-		"size[11,5.5,true]"
+		FORMSPEC_VERSION_STRING
+		SIZE_TAG
 		"field[3,2.35;6,0.5;f_text;;" + text + "]"
 		"button_exit[4,3;3,0.5;btn_send;" + wide_to_narrow(wstrgettext("Proceed")) + "]"
 		;
@@ -960,7 +978,7 @@ static void show_chat_menu(GUIFormSpecMenu** cur_formspec,
 	FormspecFormSource* fs_src = new FormspecFormSource(formspec);
 	LocalFormspecHandler* txt_dst = new LocalFormspecHandler("MT_CHAT_MENU", client);
 
-	create_formspec_menu(cur_formspec, invmgr, gamedef, tsrc, device, fs_src, txt_dst);
+	create_formspec_menu(cur_formspec, invmgr, gamedef, tsrc, device, fs_src, txt_dst, NULL);
 }
 
 static void show_deathscreen(GUIFormSpecMenu** cur_formspec,
@@ -968,8 +986,8 @@ static void show_deathscreen(GUIFormSpecMenu** cur_formspec,
 		IWritableTextureSource* tsrc, IrrlichtDevice * device, Client* client)
 {
 	std::string formspec =
-		std::string("") +
-		"size[11,5.5,true]"
+		std::string(FORMSPEC_VERSION_STRING) +
+		SIZE_TAG
 		"bgcolor[#320000b4;true]"
 		"label[4.85,1.35;You died.]"
 		"button_exit[4,3;3,0.5;btn_respawn;" + gettext("Respawn") + "]"
@@ -981,7 +999,7 @@ static void show_deathscreen(GUIFormSpecMenu** cur_formspec,
 	FormspecFormSource* fs_src = new FormspecFormSource(formspec);
 	LocalFormspecHandler* txt_dst = new LocalFormspecHandler("MT_DEATH_SCREEN", client);
 
-	create_formspec_menu(cur_formspec, invmgr, gamedef, tsrc, device,  fs_src, txt_dst);
+	create_formspec_menu(cur_formspec, invmgr, gamedef, tsrc, device,  fs_src, txt_dst, NULL);
 }
 
 /******************************************************************************/
@@ -990,6 +1008,21 @@ static void show_pause_menu(GUIFormSpecMenu** cur_formspec,
 		IWritableTextureSource* tsrc, IrrlichtDevice * device,
 		bool singleplayermode)
 {
+#ifdef __ANDROID__
+	std::string control_text = wide_to_narrow(wstrgettext("Default Controls:\n"
+			"No menu visible:\n"
+			"- single tap: button activate\n"
+			"- double tap: place/use\n"
+			"- slide finger: look around\n"
+			"Menu/Inventory visible:\n"
+			"- double tap (outside):\n"
+			" -->close\n"
+			"- touch stack, touch slot:\n"
+			" --> move stack\n"
+			"- touch&drag, tap 2nd finger\n"
+			" --> place single item to slot\n"
+			));
+#else
 	std::string control_text = wide_to_narrow(wstrgettext("Default Controls:\n"
 			"- WASD: move\n"
 			"- Space: jump/climb\n"
@@ -1002,11 +1035,11 @@ static void show_pause_menu(GUIFormSpecMenu** cur_formspec,
 			"- Mouse wheel: select item\n"
 			"- T: chat\n"
 			));
-
+#endif
 	float ypos = singleplayermode ? 1.0 : 0.5;
 	std::ostringstream os;
 
-	os << "size[11,5.5,true]"
+	os << FORMSPEC_VERSION_STRING  << SIZE_TAG
 			<< "button_exit[4," << (ypos++) << ";3,0.5;btn_continue;"
 					<< wide_to_narrow(wstrgettext("Continue"))     << "]";
 
@@ -1017,11 +1050,13 @@ static void show_pause_menu(GUIFormSpecMenu** cur_formspec,
 
 	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_sound;"
 					<< wide_to_narrow(wstrgettext("Sound Volume")) << "]";
+	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_key_config;"
+					<< wide_to_narrow(wstrgettext("Change Keys"))  << "]";
 	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_exit_menu;"
 					<< wide_to_narrow(wstrgettext("Exit to Menu")) << "]";
 	os		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_exit_os;"
 					<< wide_to_narrow(wstrgettext("Exit to OS"))   << "]"
-			<< "textarea[7.5,0.25;3.75,6;;" << control_text << ";]"
+			<< "textarea[7.5,0.25;3.9,6.25;;" << control_text << ";]"
 			<< "textarea[0.4,0.25;3.5,6;;" << "Minetest\n"
 			<< minetest_build_info << "\n"
 			<< "path_user = " << wrap_rows(porting::path_user, 20)
@@ -1033,11 +1068,63 @@ static void show_pause_menu(GUIFormSpecMenu** cur_formspec,
 	FormspecFormSource* fs_src = new FormspecFormSource(os.str());
 	LocalFormspecHandler* txt_dst = new LocalFormspecHandler("MT_PAUSE_MENU");
 
-	create_formspec_menu(cur_formspec, invmgr, gamedef, tsrc, device,  fs_src, txt_dst);
+	create_formspec_menu(cur_formspec, invmgr, gamedef, tsrc, device,  fs_src, txt_dst, NULL);
 
-	if (singleplayermode) {
-		(*cur_formspec)->doPause = true;
+	(*cur_formspec)->doPause = true;
+}
+
+/******************************************************************************/
+static void updateChat(Client& client, f32 dtime, bool show_debug,
+		const v2u32& screensize, bool show_chat, u32 show_profiler,
+		ChatBackend& chat_backend, gui::IGUIStaticText* guitext_chat,
+		gui::IGUIFont* font)
+{
+	// Add chat log output for errors to be shown in chat
+	static LogOutputBuffer chat_log_error_buf(LMT_ERROR);
+
+	// Get new messages from error log buffer
+	while(!chat_log_error_buf.empty()) {
+		chat_backend.addMessage(L"", narrow_to_wide(chat_log_error_buf.get()));
 	}
+
+	// Get new messages from client
+	std::wstring message;
+	while (client.getChatMessage(message)) {
+		chat_backend.addUnparsedMessage(message);
+	}
+
+	// Remove old messages
+	chat_backend.step(dtime);
+
+	// Display all messages in a static text element
+	unsigned int recent_chat_count = chat_backend.getRecentBuffer().getLineCount();
+	std::wstring recent_chat       = chat_backend.getRecentChat();
+
+	// TODO replace by fontengine fcts
+	unsigned int line_height       = font->getDimension(L"Ay").Height + font->getKerningHeight();
+
+	guitext_chat->setText(recent_chat.c_str());
+
+	// Update gui element size and position
+	s32 chat_y = 5 + line_height;
+	if (show_debug)
+		chat_y += line_height;
+
+	// first pass to calculate height of text to be set
+	s32 width = std::min(font->getDimension(recent_chat.c_str()).Width + 10,
+			porting::getWindowSize().X - 20);
+	core::rect<s32> rect(10, chat_y, width, chat_y + porting::getWindowSize().Y);
+	guitext_chat->setRelativePosition(rect);
+
+	//now use real height of text and adjust rect according to this size	
+	rect = core::rect<s32>(10, chat_y, width,
+			chat_y + guitext_chat->getTextHeight());
+
+
+	guitext_chat->setRelativePosition(rect);
+	// Don't show chat if disabled or empty or profiler is enabled
+	guitext_chat->setVisible(
+			show_chat && recent_chat_count != 0 && !show_profiler);
 }
 
 /******************************************************************************/
@@ -1109,9 +1196,6 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 	// Sound maker
 	SoundMaker soundmaker(sound, nodedef);
 	soundmaker.registerReceiver(&eventmgr);
-
-	// Add chat log output for errors to be shown in chat
-	LogOutputBuffer chat_log_error_buf(LMT_ERROR);
 
 	// Create UI for modifying quicktune values
 	QuicktuneShortcutter quicktune;
@@ -1253,18 +1337,18 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 				server->step(dtime);
 
 			// End condition
-			if(client.getState() == LC_Init){
+			if(client.getState() == LC_Init) {
 				could_connect = true;
 				break;
 			}
 			// Break conditions
-			if(client.accessDenied()){
+			if(client.accessDenied()) {
 				error_message = L"Access denied. Reason: "
 						+client.accessDeniedReason();
 				errorstream<<wide_to_narrow(error_message)<<std::endl;
 				break;
 			}
-			if(input->wasKeyDown(EscapeKey)){
+			if(input->wasKeyDown(EscapeKey) || input->wasKeyDown(CancelKey)) {
 				connect_aborted = true;
 				infostream<<"Connect aborted [Escape]"<<std::endl;
 				break;
@@ -1310,8 +1394,8 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 	/*
 		Handle failure to connect
 	*/
-	if(!could_connect){
-		if(error_message == L"" && !connect_aborted){
+	if(!could_connect) {
+		if(error_message == L"" && !connect_aborted) {
 			error_message = L"Connection failed";
 			errorstream<<wide_to_narrow(error_message)<<std::endl;
 		}
@@ -1330,8 +1414,7 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 		float fps_max = g_settings->getFloat("fps_max");
 		bool cloud_menu_background = g_settings->getBool("menu_clouds");
 		u32 lasttime = device->getTimer()->getTime();
-		while(device->run())
-		{
+		while (device->run()) {
 			f32 dtime = 0.033; // in seconds
 			if (cloud_menu_background) {
 				u32 time = device->getTimer()->getTime();
@@ -1343,29 +1426,29 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 			}
 			// Update client and server
 			client.step(dtime);
-			if(server != NULL)
+			if (server != NULL)
 				server->step(dtime);
 
 			// End condition
-			if(client.mediaReceived() &&
+			if (client.mediaReceived() &&
 					client.itemdefReceived() &&
-					client.nodedefReceived()){
+					client.nodedefReceived()) {
 				got_content = true;
 				break;
 			}
 			// Break conditions
-			if(client.accessDenied()){
+			if (client.accessDenied()) {
 				error_message = L"Access denied. Reason: "
 						+client.accessDeniedReason();
 				errorstream<<wide_to_narrow(error_message)<<std::endl;
 				break;
 			}
-			if(client.getState() < LC_Init){
+			if (client.getState() < LC_Init) {
 				error_message = L"Client disconnected";
 				errorstream<<wide_to_narrow(error_message)<<std::endl;
 				break;
 			}
-			if(input->wasKeyDown(EscapeKey)){
+			if (input->wasKeyDown(EscapeKey) || input->wasKeyDown(CancelKey)) {
 				content_aborted = true;
 				infostream<<"Connect aborted [Escape]"<<std::endl;
 				break;
@@ -1505,24 +1588,24 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 	gui::IGUIStaticText *guitext = guienv->addStaticText(
 			L"Minetest",
 			core::rect<s32>(0, 0, 0, 0),
-			false, false);
+			false, false, guiroot);
 	// Second line of debug text
 	gui::IGUIStaticText *guitext2 = guienv->addStaticText(
 			L"",
 			core::rect<s32>(0, 0, 0, 0),
-			false, false);
+			false, false, guiroot);
 	// At the middle of the screen
 	// Object infos are shown in this
 	gui::IGUIStaticText *guitext_info = guienv->addStaticText(
 			L"",
 			core::rect<s32>(0,0,400,text_height*5+5) + v2s32(100,200),
-			false, true);
+			false, true, guiroot);
 
 	// Status text (displays info when showing and hiding GUI stuff, etc.)
 	gui::IGUIStaticText *guitext_status = guienv->addStaticText(
 			L"<Status>",
 			core::rect<s32>(0,0,0,0),
-			false, false);
+			false, false, guiroot);
 	guitext_status->setVisible(false);
 
 	std::wstring statustext;
@@ -1533,7 +1616,7 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 			L"",
 			core::rect<s32>(0,0,0,0),
 			//false, false); // Disable word wrap as of now
-			false, true);
+			false, true, guiroot);
 	// Remove stale "recent" chat messages from previous connections
 	chat_backend.clearRecentChat();
 	// Chat backend and console
@@ -1543,10 +1626,15 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 	gui::IGUIStaticText *guitext_profiler = guienv->addStaticText(
 			L"<Profiler>",
 			core::rect<s32>(0,0,0,0),
-			false, false);
+			false, false, guiroot);
 	guitext_profiler->setBackgroundColor(video::SColor(120,0,0,0));
 	guitext_profiler->setVisible(false);
 	guitext_profiler->setWordWrap(true);
+
+#ifdef HAVE_TOUCHSCREENGUI
+	if (g_touchscreengui)
+		g_touchscreengui->init(tsrc,porting::getDisplayDensity());
+#endif
 
 	/*
 		Some statistics are collected in these
@@ -1641,7 +1729,8 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 
 	for(;;)
 	{
-		if(device->run() == false || kill == true)
+		if(device->run() == false || kill == true ||
+				g_gamecallback->shutdown_requested)
 			break;
 
 		v2u32 screensize = driver->getScreenSize();
@@ -1796,6 +1885,14 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 			g_gamecallback->changevolume_requested = false;
 		}
 
+		if(g_gamecallback->keyconfig_requested)
+		{
+			(new GUIKeyChangeMenu(guienv, guiroot, -1,
+				&g_menumgr))->drop();
+			g_gamecallback->keyconfig_requested = false;
+		}
+
+
 		/* Process TextureSource's queue */
 		tsrc->processQueue();
 
@@ -1858,6 +1955,15 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 
 		// Input handler step() (used by the random input generator)
 		input->step(dtime);
+#ifdef HAVE_TOUCHSCREENGUI
+		if (g_touchscreengui) {
+			g_touchscreengui->step(dtime);
+		}
+#endif
+#ifdef __ANDROID__
+		if (current_formspec != 0)
+			current_formspec->getAndroidUIInput();
+#endif
 
 		// Increase timer for doubleclick of "jump"
 		if(g_settings->getBool("doubletap_jump") && jump_timer <= 0.2)
@@ -1884,13 +1990,13 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 			PlayerInventoryFormSource* fs_src = new PlayerInventoryFormSource(&client);
 			TextDest* txt_dst = new TextDestPlayerInventory(&client);
 
-			create_formspec_menu(&current_formspec, &client, gamedef, tsrc, device, fs_src, txt_dst);
+			create_formspec_menu(&current_formspec, &client, gamedef, tsrc, device, fs_src, txt_dst, &client);
 
 			InventoryLocation inventoryloc;
 			inventoryloc.setCurrentPlayer();
 			current_formspec->setFormSpec(fs_src->getForm(), inventoryloc);
 		}
-		else if(input->wasKeyDown(EscapeKey))
+		else if(input->wasKeyDown(EscapeKey) || input->wasKeyDown(CancelKey))
 		{
 			show_pause_menu(&current_formspec, &client, gamedef, tsrc, device,
 					simple_singleplayer_mode);
@@ -1988,31 +2094,18 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 		}
 		else if(input->wasKeyDown(getKeySetting("keymap_screenshot")))
 		{
-			irr::video::IImage* const image = driver->createScreenShot();
-			if (image) {
-				irr::c8 filename[256];
-				snprintf(filename, 256, "%s" DIR_DELIM "screenshot_%u.png",
-						 g_settings->get("screenshot_path").c_str(),
-						 device->getTimer()->getRealTime());
-				if (driver->writeImageToFile(image, filename)) {
-					std::wstringstream sstr;
-					sstr<<"Saved screenshot to '"<<filename<<"'";
-					infostream<<"Saved screenshot to '"<<filename<<"'"<<std::endl;
-					statustext = sstr.str();
-					statustext_time = 0;
-				} else{
-					infostream<<"Failed to save screenshot '"<<filename<<"'"<<std::endl;
-				}
-				image->drop();
-			}
+			client.makeScreenshot(device);
 		}
 		else if(input->wasKeyDown(getKeySetting("keymap_toggle_hud")))
 		{
 			show_hud = !show_hud;
-			if(show_hud)
+			if(show_hud) {
 				statustext = L"HUD shown";
-			else
+				client.setHighlighted(client.getHighlighted(), true);
+			} else {
 				statustext = L"HUD hidden";
+				client.setHighlighted(client.getHighlighted(), false);
+			}
 			statustext_time = 0;
 		}
 		else if(input->wasKeyDown(getKeySetting("keymap_toggle_chat")))
@@ -2214,21 +2307,29 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 		float turn_amount = 0;
 		if((device->isWindowActive() && noMenuActive()) || random_input)
 		{
+#ifndef __ANDROID__
 			if(!random_input)
 			{
 				// Mac OSX gets upset if this is set every frame
 				if(device->getCursorControl()->isVisible())
 					device->getCursorControl()->setVisible(false);
 			}
+#endif
 
 			if(first_loop_after_window_activation){
 				//infostream<<"window active, first loop"<<std::endl;
 				first_loop_after_window_activation = false;
-			}
-			else{
-				s32 dx = input->getMousePos().X - (driver->getScreenSize().Width/2);
-				s32 dy = input->getMousePos().Y - (driver->getScreenSize().Height/2);
-				if(invert_mouse || camera.getCameraMode() == CAMERA_MODE_THIRD_FRONT) {
+			} else {
+#ifdef HAVE_TOUCHSCREENGUI
+				if (g_touchscreengui) {
+					camera_yaw   = g_touchscreengui->getYaw();
+					camera_pitch = g_touchscreengui->getPitch();
+				} else {
+#endif
+					s32 dx = input->getMousePos().X - (driver->getScreenSize().Width/2);
+					s32 dy = input->getMousePos().Y - (driver->getScreenSize().Height/2);
+				if ((invert_mouse)
+						|| (camera.getCameraMode() == CAMERA_MODE_THIRD_FRONT)) {
 					dy = -dy;
 				}
 				//infostream<<"window active, pos difference "<<dx<<","<<dy<<std::endl;
@@ -2247,18 +2348,23 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 				d = rangelim(d, 0.01, 100.0);
 				camera_yaw -= dx*d;
 				camera_pitch += dy*d;
+				turn_amount = v2f(dx, dy).getLength() * d;
+
+#ifdef HAVE_TOUCHSCREENGUI
+				}
+#endif
 				if(camera_pitch < -89.5) camera_pitch = -89.5;
 				if(camera_pitch > 89.5) camera_pitch = 89.5;
-
-				turn_amount = v2f(dx, dy).getLength() * d;
 			}
 			input->setMousePos((driver->getScreenSize().Width/2),
 					(driver->getScreenSize().Height/2));
 		}
 		else{
+#ifndef ANDROID
 			// Mac OSX gets upset if this is set every frame
 			if(device->getCursorControl()->isVisible() == false)
 				device->getCursorControl()->setVisible(true);
+#endif
 
 			//infostream<<"window inactive"<<std::endl;
 			first_loop_after_window_activation = true;
@@ -2347,8 +2453,8 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 					damage_flash += 8.0 * event.player_damage.amount;
 
 					player->hurt_tilt_timer = 1.5;
-					player->hurt_tilt_strength = event.player_damage.amount/2;
-					player->hurt_tilt_strength = rangelim(player->hurt_tilt_strength, 2.0, 10.0);
+					player->hurt_tilt_strength = event.player_damage.amount/4;
+					player->hurt_tilt_strength = rangelim(player->hurt_tilt_strength, 1.0, 4.0);
 
 					MtEvent *e = new SimpleTriggerEvent("PlayerDamage");
 					gamedef->event()->put(e);
@@ -2378,7 +2484,7 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 							new TextDestPlayerInventory(&client,*(event.show_formspec.formname));
 
 					create_formspec_menu(&current_formspec, &client, gamedef,
-							tsrc, device, fs_src, txt_dst);
+							tsrc, device, fs_src, txt_dst, &client);
 
 					delete(event.show_formspec.formspec);
 					delete(event.show_formspec.formname);
@@ -2581,10 +2687,8 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 		ItemStack playeritem;
 		{
 			InventoryList *mlist = local_inventory.getList("main");
-			if(mlist != NULL)
-			{
+			if((mlist != NULL) && (client.getPlayerItem() < mlist->getSize()))
 				playeritem = mlist->getItem(client.getPlayerItem());
-			}
 		}
 		const ItemDefinition &playeritem_def =
 				playeritem.getDefinition(itemdef);
@@ -2670,9 +2774,18 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 		core::line3d<f32> shootline(camera_position,
 				camera_position + camera_direction * BS * (d+1));
 
+
 		// prevent player pointing anything in front-view
 		if (camera.getCameraMode() == CAMERA_MODE_THIRD_FRONT)
 			shootline = core::line3d<f32>(0,0,0,0,0,0);
+
+#ifdef HAVE_TOUCHSCREENGUI
+		if ((g_settings->getBool("touchtarget")) && (g_touchscreengui)) {
+			shootline = g_touchscreengui->getShootline();
+			shootline.start += intToFloat(camera_offset,BS);
+			shootline.end += intToFloat(camera_offset,BS);
+		}
+#endif
 
 		ClientActiveObject *selected_object = NULL;
 
@@ -2689,7 +2802,13 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 		if(pointed != pointed_old)
 		{
 			infostream<<"Pointing at "<<pointed.dump()<<std::endl;
-			//dstream<<"Pointing at "<<pointed.dump()<<std::endl;
+			if (g_settings->getBool("enable_node_highlighting")) {
+				if (pointed.type == POINTEDTHING_NODE) {
+					client.setHighlighted(pointed.node_undersurface, show_hud);
+				} else {
+					client.setHighlighted(pointed.node_undersurface, false);
+				}
+			}
 		}
 
 		/*
@@ -2907,26 +3026,7 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 				repeat_rightclick_timer = 0;
 				infostream<<"Ground right-clicked"<<std::endl;
 
-				// Sign special case, at least until formspec is properly implemented.
-				// Deprecated?
-				if(meta && meta->getString("formspec") == "hack:sign_text_input"
-						&& !random_input
-						&& !input->isKeyDown(getKeySetting("keymap_sneak")))
-				{
-					infostream<<"Launching metadata text input"<<std::endl;
-
-					// Get a new text for it
-
-					TextDest *dest = new TextDestNodeMetadata(nodepos, &client);
-
-					std::wstring wtext = narrow_to_wide(meta->getString("text"));
-
-					(new GUITextInputMenu(guienv, guiroot, -1,
-							&g_menumgr, dest,
-							wtext))->drop();
-				}
-				// If metadata provides an inventory view, activate it
-				else if(meta && meta->getString("formspec") != "" && !random_input
+				if(meta && meta->getString("formspec") != "" && !random_input
 						&& !input->isKeyDown(getKeySetting("keymap_sneak")))
 				{
 					infostream<<"Launching custom inventory view"<<std::endl;
@@ -2939,7 +3039,7 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 					TextDest* txt_dst = new TextDestNodeMetadata(nodepos, &client);
 
 					create_formspec_menu(&current_formspec, &client, gamedef,
-							tsrc, device, fs_src, txt_dst);
+							tsrc, device, fs_src, txt_dst, &client);
 
 					current_formspec->setFormSpec(meta->getString("formspec"), inventoryloc);
 				}
@@ -3249,7 +3349,7 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 				core::rect<s32> rect(
 						10,
 						status_y - guitext_status->getTextHeight(),
-						screensize.X - 10,
+						10 + guitext_status->getTextWidth(),
 						status_y
 				);
 				guitext_status->setRelativePosition(rect);
@@ -3273,43 +3373,8 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 		/*
 			Get chat messages from client
 		*/
-		{
-			// Get new messages from error log buffer
-			while(!chat_log_error_buf.empty())
-			{
-				chat_backend.addMessage(L"", narrow_to_wide(
-						chat_log_error_buf.get()));
-			}
-			// Get new messages from client
-			std::wstring message;
-			while(client.getChatMessage(message))
-			{
-				chat_backend.addUnparsedMessage(message);
-			}
-			// Remove old messages
-			chat_backend.step(dtime);
-
-			// Display all messages in a static text element
-			u32 recent_chat_count = chat_backend.getRecentBuffer().getLineCount();
-			std::wstring recent_chat = chat_backend.getRecentChat();
-			guitext_chat->setText(recent_chat.c_str());
-
-			// Update gui element size and position
-			s32 chat_y = 5+(text_height+5);
-			if(show_debug)
-				chat_y += (text_height+5);
-			core::rect<s32> rect(
-				10,
-				chat_y,
-				screensize.X - 10,
-				chat_y + guitext_chat->getTextHeight()
-			);
-			guitext_chat->setRelativePosition(rect);
-
-			// Don't show chat if disabled or empty or profiler is enabled
-			guitext_chat->setVisible(show_chat && recent_chat_count != 0
-					&& !show_profiler);
-		}
+		updateChat(client, dtime, show_debug, screensize, show_chat,
+				show_profiler, chat_backend, guitext_chat, font);
 
 		/*
 			Inventory
@@ -3332,7 +3397,7 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 			// Update wielded tool
 			InventoryList *mlist = local_inventory.getList("main");
 			ItemStack item;
-			if(mlist != NULL)
+			if((mlist != NULL) && (client.getPlayerItem() < mlist->getSize()))
 				item = mlist->getItem(client.getPlayerItem());
 			camera.wield(item, client.getPlayerItem());
 		}
@@ -3348,6 +3413,13 @@ void the_game(bool &kill, bool random_input, InputHandler *input,
 			update_draw_list_timer = 0;
 			client.getEnv().getClientMap().updateDrawList(driver);
 			update_draw_list_last_cam_dir = camera_direction;
+		}
+
+		/*
+			make sure menu is on top
+		*/
+		if ((!noMenuActive()) && (current_formspec)) {
+				guiroot->bringToFront(current_formspec);
 		}
 
 		/*
