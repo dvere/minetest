@@ -525,7 +525,6 @@ if(BUILD_CLIENT)
 		${BZIP2_LIBRARIES}
 		${PNG_LIBRARIES}
 		${X11_LIBRARIES}
-		${GETTEXT_LIBRARY}
 		${SOUND_LIBRARIES}
 		${SQLITE3_LIBRARY}
 		${LUA_LIBRARY}
@@ -540,17 +539,19 @@ if(BUILD_CLIENT)
 			${ICONV_LIBRARY}
 		)
 	else()
-		target_link_libraries(
-			${minetest_LIBS}
-		)
+		if(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
+			target_link_libraries(
+                        	${minetest_LIBS}
+				${ICONV_LIBRARIES}
+				${LIBINTL_LIBRARIES}
+			)
+		else()
+			target_link_libraries(
+				${minetest_LIBS}
+				${GETTEXT_LIBRARY}
+			)
+		endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
 	endif()
-	if(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
-		target_link_libraries(
-                        ${minetest_LIBS}
-			${ICONV_LIBRARIES}
-			${LIBINTL_LIBRARIES}
-		)
-	endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")	
 	if(USE_CURL)
 		target_link_libraries(
 			${PROJECT_NAME}
@@ -586,7 +587,6 @@ if(BUILD_SERVER)
 		${ZLIB_LIBRARIES}
 		${SQLITE3_LIBRARY}
 		${JSON_LIBRARY}
-		${GETTEXT_LIBRARY}
 		${LUA_LIBRARY}
 		${PLATFORM_LIBS}
 	)
@@ -596,6 +596,11 @@ if(BUILD_SERVER)
 			${ICONV_LIBRARIES}
 			${LIBINTL_LIBRARIES}
 		)
+	else()
+		target_link_libraries(
+			${minetest_LIBS}
+			${GETTEXT_LIBRARY}
+		)	
 	endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
 	if (USE_LEVELDB)
 		target_link_libraries(${PROJECT_NAME}server ${LEVELDB_LIBRARY})
