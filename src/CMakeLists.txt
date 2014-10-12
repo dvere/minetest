@@ -31,6 +31,12 @@ set(USE_GETTEXT 0)
 
 if(ENABLE_GETTEXT)
 	find_package(GettextLib)
+
+	if(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
+		find_package(Iconv)
+		find_package(Libintl)
+	endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
+
 else()
 	MARK_AS_ADVANCED(GETTEXT_ICONV_DLL GETTEXT_INCLUDE_DIR GETTEXT_LIBRARY GETTEXT_MSGFMT)
 endif()
@@ -164,7 +170,11 @@ else()
 	if(APPLE)
 		set(PLATFORM_LIBS "-framework CoreFoundation" ${PLATFORM_LIBS})
 	else()
-		set(PLATFORM_LIBS -lrt ${PLATFORM_LIBS})
+		# librt is not guaranteed
+		check_library_exists(rt clock_gettime "" HAVE_LIBRT)
+		if (HAVE_LIBRT)
+			set(PLATFORM_LIBS -lrt ${PLATFORM_LIBS})
+		endif()
 	endif(APPLE)
 	#set(CLIENT_PLATFORM_LIBS -lXxf86vm)
 	# This way Xxf86vm is found on OpenBSD too
@@ -529,11 +539,19 @@ if(BUILD_CLIENT)
 			${minetest_LIBS}
 			${ICONV_LIBRARY}
 		)
+	)
 	else()
 		target_link_libraries(
 			${minetest_LIBS}
 		)
 	endif()
+	if(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
+		target_link_libraries(
+                        ${minetest_LIBS}
+			${ICONV_LIBRARIES}
+			${LIBINTL_LIBRARIES}
+		)
+	endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")	
 	if(USE_CURL)
 		target_link_libraries(
 			${PROJECT_NAME}
@@ -573,6 +591,12 @@ if(BUILD_SERVER)
 		${LUA_LIBRARY}
 		${PLATFORM_LIBS}
 	)
+	if(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
+		target_link_libraries(
+                        ${minetest_LIBS}
+			${ICONV_LIBRARIES}
+			${LIBINTL_LIBRARIES}
+	endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
 	if (USE_LEVELDB)
 		target_link_libraries(${PROJECT_NAME}server ${LEVELDB_LIBRARY})
 	endif(USE_LEVELDB)
@@ -640,8 +664,13 @@ else()
 	set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG ${RELEASE_WARNING_FLAGS} ${WARNING_FLAGS} ${OTHER_FLAGS} -ffast-math -Wall -pipe -funroll-loops")
 	if(APPLE)
 		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
+	)
 	else()
-		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -fomit-frame-pointer")
+		if(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
+			set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG ${RELEASE_WARNING_FLAGS} ${WARNING_FLAGS} ${OTHER_FLAGS}"
+		else()
+			set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -fomit-frame-pointer")
+		endif(${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD")
 	endif(APPLE)
 	set(CMAKE_CXX_FLAGS_DEBUG "-g -O1 -Wall ${WARNING_FLAGS} ${OTHER_FLAGS}")
 
