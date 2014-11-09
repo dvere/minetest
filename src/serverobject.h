@@ -69,9 +69,6 @@ public:
 	// environment
 	virtual bool environmentDeletes() const
 	{ return true; }
-
-	virtual bool unlimitedTransferDistance() const
-	{ return false; }
 	
 	// Create a certain type of ServerActiveObject
 	static ServerActiveObject* create(u8 type,
@@ -97,8 +94,6 @@ public:
 	// If object has moved less than this and data has not changed,
 	// saving to disk may be omitted
 	virtual float getMinimumSavedMovement();
-	
-	virtual bool isPeaceful(){return true;}
 
 	virtual std::string getDescription(){return "SAO";}
 	

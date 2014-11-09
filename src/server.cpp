@@ -44,7 +44,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "craftdef.h"
 #include "emerge.h"
 #include "mapgen.h"
-#include "biome.h"
+#include "mg_biome.h"
 #include "content_mapnode.h"
 #include "content_nodemeta.h"
 #include "content_abm.h"
@@ -337,6 +337,9 @@ Server::Server(
 
 	// Apply item aliases in the node definition manager
 	m_nodedef->updateAliases(m_itemdef);
+
+	// Perform pending node name resolutions
+	m_nodedef->getResolver()->resolveNodes();
 
 	// Load the mapgen params from global settings now after any
 	// initial overrides have been set by the mods
@@ -704,7 +707,14 @@ void Server::AsyncRunStep(bool initial_step)
 
 		// Radius inside which objects are active
 		s16 radius = g_settings->getS16("active_object_send_range_blocks");
+		s16 player_radius = g_settings->getS16("player_transfer_distance");
+
+		if (player_radius == 0 && g_settings->exists("unlimited_player_transfer_distance") &&
+				!g_settings->getBool("unlimited_player_transfer_distance"))
+			player_radius = radius;
+
 		radius *= MAP_BLOCKSIZE;
+		player_radius *= MAP_BLOCKSIZE;
 
 		for(std::map<u16, RemoteClient*>::iterator
 			i = clients.begin();
@@ -730,9 +740,9 @@ void Server::AsyncRunStep(bool initial_step)
 
 			std::set<u16> removed_objects;
 			std::set<u16> added_objects;
-			m_env->getRemovedActiveObjects(pos, radius,
+			m_env->getRemovedActiveObjects(pos, radius, player_radius,
 					client->m_known_objects, removed_objects);
-			m_env->getAddedActiveObjects(pos, radius,
+			m_env->getAddedActiveObjects(pos, radius, player_radius,
 					client->m_known_objects, added_objects);
 
 			// Ignore if nothing happened
@@ -4890,6 +4900,11 @@ IShaderSource* Server::getShaderSource()
 {
 	return NULL;
 }
+scene::ISceneManager* Server::getSceneManager()
+{
+	return NULL;
+}
+
 u16 Server::allocateUnknownNodeId(const std::string &name)
 {
 	return m_nodedef->allocateDummy(name);

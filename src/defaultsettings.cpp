@@ -153,6 +153,7 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("enable_shaders", "true");
 	settings->setDefault("repeat_rightclick_time", "0.25");
 	settings->setDefault("enable_particles", "true");
+	settings->setDefault("enable_mesh_cache", "true");
 
 	settings->setDefault("curl_timeout", "5000");
 	settings->setDefault("curl_parallel_limit", "8");
@@ -197,12 +198,11 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("strict_protocol_version_checking", "false");
 	settings->setDefault("creative_mode", "false");
 	settings->setDefault("enable_damage", "true");
-	settings->setDefault("only_peaceful_mobs", "false");
 	settings->setDefault("fixed_map_seed", "");
 	settings->setDefault("give_initial_stuff", "false");
 	settings->setDefault("default_password", "");
 	settings->setDefault("default_privs", "interact, shout");
-	settings->setDefault("unlimited_player_transfer_distance", "true");
+	settings->setDefault("player_transfer_distance", "0");
 	settings->setDefault("enable_pvp", "true");
 	settings->setDefault("disallow_empty_password", "false");
 	settings->setDefault("disable_anticheat", "false");

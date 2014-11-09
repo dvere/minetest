@@ -345,7 +345,6 @@ add_subdirectory(util)
 set(common_SRCS
 	ban.cpp
 	base64.cpp
-	biome.cpp
 	cavegen.cpp
 	clientiface.cpp
 	collision.cpp
@@ -379,10 +378,15 @@ set(common_SRCS
 	mapblock.cpp
 	mapgen.cpp
 	mapgen_singlenode.cpp
+	mapgen_v5.cpp
 	mapgen_v6.cpp
 	mapgen_v7.cpp
 	mapnode.cpp
 	mapsector.cpp
+	mg_biome.cpp
+	mg_decoration.cpp
+	mg_ore.cpp
+	mg_schematic.cpp
 	mods.cpp
 	nameidmapping.cpp
 	nodedef.cpp
@@ -472,6 +476,7 @@ set(minetest_SRCS
 	shader.cpp
 	sky.cpp
 	tile.cpp
+	wieldmesh.cpp
 	${minetest_SCRIPT_SRCS}
 )
 list(SORT minetest_SRCS)

@@ -250,6 +250,7 @@ Client::Client(
 	m_inventory_updated(false),
 	m_inventory_from_server(NULL),
 	m_inventory_from_server_age(0.0),
+	m_show_hud(true),
 	m_animation_time(0),
 	m_crack_level(-1),
 	m_crack_pos(0,0,0),
@@ -2299,20 +2300,19 @@ void Client::removeNode(v3s16 p)
 	{
 	}
 	
-	// add urgent task to update the modified node
-	addUpdateMeshTaskForNode(p, false, true);
-
 	for(std::map<v3s16, MapBlock * >::iterator
 			i = modified_blocks.begin();
 			i != modified_blocks.end(); ++i)
 	{
-		addUpdateMeshTaskWithEdge(i->first);
+		addUpdateMeshTask(i->first, false, false);
 	}
+	// add urgent task to update the modified node
+	addUpdateMeshTaskForNode(p, false, true);
 }
 
 void Client::addNode(v3s16 p, MapNode n, bool remove_metadata)
 {
-	TimeTaker timer1("Client::addNode()");
+	//TimeTaker timer1("Client::addNode()");
 
 	std::map<v3s16, MapBlock*> modified_blocks;
 
@@ -2328,7 +2328,7 @@ void Client::addNode(v3s16 p, MapNode n, bool remove_metadata)
 			i = modified_blocks.begin();
 			i != modified_blocks.end(); ++i)
 	{
-		addUpdateMeshTaskWithEdge(i->first);
+		addUpdateMeshTask(i->first, false, false);
 	}
 }
 	
@@ -2678,7 +2678,7 @@ void Client::afterContentReceived(IrrlichtDevice *device, gui::IGUIFont* font)
 
 	// Update node textures and assign shaders to each tile
 	infostream<<"- Updating node textures"<<std::endl;
-	m_nodedef->updateTextures(m_tsrc, m_shsrc);
+	m_nodedef->updateTextures(this);
 
 	// Preload item textures and meshes if configured to
 	if(g_settings->getBool("preload_item_visuals"))
@@ -2779,6 +2779,10 @@ ITextureSource* Client::getTextureSource()
 IShaderSource* Client::getShaderSource()
 {
 	return m_shsrc;
+}
+scene::ISceneManager* Client::getSceneManager()
+{
+	return m_device->getSceneManager();
 }
 u16 Client::allocateUnknownNodeId(const std::string &name)
 {

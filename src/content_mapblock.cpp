@@ -25,6 +25,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "settings.h"
 #include "nodedef.h"
 #include "tile.h"
+#include "mesh.h"
+#include <IMeshManipulator.h>
 #include "gamedef.h"
 #include "log.h"
 
@@ -171,6 +173,8 @@ void mapblock_mesh_generate_special(MeshMakeData *data,
 {
 	INodeDefManager *nodedef = data->m_gamedef->ndef();
 	ITextureSource *tsrc = data->m_gamedef->tsrc();
+	scene::ISceneManager* smgr = data->m_gamedef->getSceneManager();
+	scene::IMeshManipulator* meshmanip = smgr->getMeshManipulator();
 
 	// 0ms
 	//TimeTaker timer("mapblock_mesh_generate_special()");
@@ -178,6 +182,7 @@ void mapblock_mesh_generate_special(MeshMakeData *data,
 	/*
 		Some settings
 	*/
+	bool enable_mesh_cache	= g_settings->getBool("enable_mesh_cache");
 	bool new_style_water = g_settings->getBool("new_style_water");
 
 	float node_liquid_level = 1.0;
@@ -188,10 +193,10 @@ void mapblock_mesh_generate_special(MeshMakeData *data,
 
 	// Create selection mesh
 	v3s16 p = data->m_highlighted_pos_relative;
-	if (data->m_show_hud & 
-			(p.X >= 0) & (p.X < MAP_BLOCKSIZE) &
-			(p.Y >= 0) & (p.Y < MAP_BLOCKSIZE) &
-			(p.Z >= 0) & (p.Z < MAP_BLOCKSIZE)) {
+	if (data->m_show_hud &&
+			(p.X >= 0) && (p.X < MAP_BLOCKSIZE) &&
+			(p.Y >= 0) && (p.Y < MAP_BLOCKSIZE) &&
+			(p.Z >= 0) && (p.Z < MAP_BLOCKSIZE)) {
 
 		MapNode n = data->m_vmanip.getNodeNoEx(blockpos_nodes + p);
 		if(n.getContent() != CONTENT_AIR) {
@@ -215,7 +220,7 @@ void mapblock_mesh_generate_special(MeshMakeData *data,
 					l = l1;
 			}
 			video::SColor c = MapBlock_LightColor(255, l, 0);
-			data->m_highlight_mesh_color = c;	
+			data->m_highlight_mesh_color = c;
 			std::vector<aabb3f> boxes = n.getSelectionBoxes(nodedef);
 			TileSpec h_tile;			
 			h_tile.material_flags |= MATERIAL_FLAG_HIGHLIGHTED;
@@ -1153,40 +1158,40 @@ void mapblock_mesh_generate_special(MeshMakeData *data,
 		{
 			TileSpec tile = getNodeTileN(n, p, 0, data);
 			tile.material_flags |= MATERIAL_FLAG_CRACK_OVERLAY;
-			
+
 			u16 l = getInteriorLight(n, 1, nodedef);
 			video::SColor c = MapBlock_LightColor(255, l, f.light_source);
-
-			float s = BS/2*f.visual_scale;
-
-			for(u32 j=0; j<2; j++)
+			
+			float s = BS / 2;
+			for(u32 j = 0; j < 2; j++)
 			{
 				video::S3DVertex vertices[4] =
 				{
-					video::S3DVertex(-s,-BS/2,      0, 0,0,0, c, 0,1),
-					video::S3DVertex( s,-BS/2,      0, 0,0,0, c, 1,1),
-					video::S3DVertex( s,-BS/2 + s*2,0, 0,0,0, c, 1,0),
-					video::S3DVertex(-s,-BS/2 + s*2,0, 0,0,0, c, 0,0),
+					video::S3DVertex(-s,-s, 0, 0,0,0, c, 0,1),
+					video::S3DVertex( s,-s, 0, 0,0,0, c, 1,1),
+					video::S3DVertex( s, s, 0, 0,0,0, c, 1,0),
+					video::S3DVertex(-s, s, 0, 0,0,0, c, 0,0),
 				};
 
 				if(j == 0)
 				{
-					for(u16 i=0; i<4; i++)
+					for(u16 i = 0; i < 4; i++)
 						vertices[i].Pos.rotateXZBy(46 + n.param2 * 2);
 				}
 				else if(j == 1)
 				{
-					for(u16 i=0; i<4; i++)
+					for(u16 i = 0; i < 4; i++)
 						vertices[i].Pos.rotateXZBy(-44 + n.param2 * 2);
 				}
 
-				for(u16 i=0; i<4; i++)
+				for(u16 i = 0; i < 4; i++)
 				{
 					vertices[i].Pos *= f.visual_scale;
+					vertices[i].Pos.Y -= s * (1 - f.visual_scale);
 					vertices[i].Pos += intToFloat(p, BS);
 				}
 
-				u16 indices[] = {0,1,2,2,3,0};
+				u16 indices[] = {0, 1, 2, 2, 3, 0};
 				// Add to mesh collector
 				collector.append(tile, vertices, 4, indices, 6);
 			}
@@ -1713,6 +1718,47 @@ void mapblock_mesh_generate_special(MeshMakeData *data,
 					tx1, 1-ty2, tx2, 1-ty1,
 				};
 				makeCuboid(&collector, box, tiles, 6, c, txc);
+			}
+		break;}
+		case NDT_MESH:
+		{
+			v3f pos = intToFloat(p, BS);
+			video::SColor c = MapBlock_LightColor(255, getInteriorLight(n, 1, nodedef), f.light_source);
+
+			u8 facedir = 0;
+			if (f.param_type_2 == CPT2_FACEDIR) {
+				facedir = n.getFaceDir(nodedef);
+			} else if (f.param_type_2 == CPT2_WALLMOUNTED) {
+				//convert wallmounted to 6dfacedir.
+				//when cache enabled, it is already converted
+				facedir = n.getWallMounted(nodedef);				
+				if (!enable_mesh_cache) {
+					static const u8 wm_to_6d[6] = 	{20, 0, 16, 12, 8, 4};
+					facedir = wm_to_6d[facedir];
+				}
+			}
+
+			if (f.mesh_ptr[facedir]) {
+				// use cached meshes
+				for(u16 j = 0; j < f.mesh_ptr[0]->getMeshBufferCount(); j++) {
+					scene::IMeshBuffer *buf = f.mesh_ptr[facedir]->getMeshBuffer(j);
+					collector.append(getNodeTileN(n, p, j, data),
+						(video::S3DVertex *)buf->getVertices(), buf->getVertexCount(),
+						buf->getIndices(), buf->getIndexCount(), pos, c);
+				}
+			} else if (f.mesh_ptr[0]) {
+				// no cache, clone and rotate mesh
+				scene::IMesh* mesh = cloneMesh(f.mesh_ptr[0]);
+				rotateMeshBy6dFacedir(mesh, facedir);
+				recalculateBoundingBox(mesh);
+				meshmanip->recalculateNormals(mesh, true, false);
+				for(u16 j = 0; j < mesh->getMeshBufferCount(); j++) {
+					scene::IMeshBuffer *buf = mesh->getMeshBuffer(j);
+					collector.append(getNodeTileN(n, p, j, data),
+						(video::S3DVertex *)buf->getVertices(), buf->getVertexCount(),
+						buf->getIndices(), buf->getIndexCount(), pos, c);
+				}
+				mesh->drop();
 			}
 		break;}
 		}
