@@ -42,7 +42,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 
 FlagDesc flagdesc_mapgen_v5[] = {
-	//{"blobs", MGV5_BLOBS},
+	{"blobs", MGV5_BLOBS},
 	{NULL,         0}
 };
 
@@ -51,7 +51,7 @@ MapgenV5::MapgenV5(int mapgenid, MapgenParams *params, EmergeManager *emerge_) {
 	this->generating  = false;
 	this->id     = mapgenid;
 	this->emerge = emerge_;
-	this->bmgr   = emerge->biomedef;
+	this->bmgr   = emerge->biomemgr;
 
 	this->seed        = (int)params->seed;
 	this->water_level = params->water_level;
@@ -69,6 +69,8 @@ MapgenV5::MapgenV5(int mapgenid, MapgenParams *params, EmergeManager *emerge_) {
 	this->heightmap = new s16[csize.X * csize.Z];
 
 	MapgenV5Params *sp = (MapgenV5Params *)params->sparams;
+
+	this->spflags     = sp->spflags;
 
 	// Terrain noise
 	noise_filler_depth = new Noise(&sp->np_filler_depth, seed, csize.X, csize.Z);
@@ -134,31 +136,32 @@ MapgenV5::~MapgenV5() {
 
 
 MapgenV5Params::MapgenV5Params() {
-	//spflags = MGV5_BLOBS;
-	spflags = 0;
+	spflags = MGV5_BLOBS;
 
-	np_filler_depth = NoiseParams(0, 1,   v3f(150, 150, 150), 261,    4, 0.7);
-	np_factor       = NoiseParams(0, 1,   v3f(250, 250, 250), 920381, 3, 0.45);
-	np_height       = NoiseParams(0, 10,  v3f(250, 250, 250), 84174,  4, 0.5);
-	np_cave1        = NoiseParams(0, 7.5, v3f(50,  50,  50),  52534,  4, 0.5);
-	np_cave2        = NoiseParams(0, 7.5, v3f(50,  50,  50),  10325,  4, 0.5);
-	np_ground       = NoiseParams(0, 40,  v3f(80,  80,  80),  983240, 4, 0.55);
-	np_crumble      = NoiseParams(0, 1,   v3f(20,  20,  20),  34413,  3, 1.3);
-	np_wetness      = NoiseParams(0, 1,   v3f(40,  40,  40),  32474,  4, 1.1);
+	np_filler_depth = NoiseParams(0, 1,  v3f(150, 150, 150), 261,    4, 0.7);
+	np_factor       = NoiseParams(0, 1,  v3f(250, 250, 250), 920381, 3, 0.45);
+	np_height       = NoiseParams(0, 10, v3f(250, 250, 250), 84174,  4, 0.5);
+	np_cave1        = NoiseParams(0, 6,  v3f(50,  50,  50),  52534,  4, 0.5);
+	np_cave2        = NoiseParams(0, 6,  v3f(50,  50,  50),  10325,  4, 0.5);
+	np_ground       = NoiseParams(0, 40, v3f(80,  80,  80),  983240, 4, 0.55);
+	np_crumble      = NoiseParams(0, 1,  v3f(20,  20,  20),  34413,  3, 1.3);
+	np_wetness      = NoiseParams(0, 1,  v3f(40,  40,  40),  32474,  4, 1.1);
 }
 
+
+// Current caves noise scale default is 6 to compensate for new eased 3d noise amplitude
 
 // Scaling the output of the noise function affects the overdrive of the
 // contour function, which affects the shape of the output considerably.
 
 //#define CAVE_NOISE_SCALE 12.0 < original default
 //#define CAVE_NOISE_SCALE 10.0
-//#define CAVE_NOISE_SCALE 7.5 < current default to compensate for new eased 3d noise
+//#define CAVE_NOISE_SCALE 7.5
 //#define CAVE_NOISE_SCALE 5.0
 //#define CAVE_NOISE_SCALE 1.0
 
 //#define CAVE_NOISE_THRESHOLD (2.5/CAVE_NOISE_SCALE)
-//#define CAVE_NOISE_THRESHOLD (1.5/CAVE_NOISE_SCALE) < original and current default
+//#define CAVE_NOISE_THRESHOLD (1.5/CAVE_NOISE_SCALE) < original and current code
 
 
 void MapgenV5Params::readParams(Settings *settings) {
@@ -222,17 +225,13 @@ void MapgenV5::makeChunk(BlockMakeData *data) {
 	updateHeightmap(node_min, node_max);
 
 	// Generate underground dirt, sand, gravel and lava blobs
-	//if (spflags & MGV5_BLOBS) {
+	if (spflags & MGV5_BLOBS) {
 		generateBlobs();
-	//}
+	}
 
 	// Calculate biomes
-	BiomeNoiseInput binput;
-	binput.mapsize      = v2s16(csize.X, csize.Z);
-	binput.heat_map     = noise_heat->result;
-	binput.humidity_map = noise_humidity->result;
-	binput.height_map   = heightmap;
-	bmgr->calcBiomes(&binput, biomemap);
+	bmgr->calcBiomes(csize.X, csize.Z, noise_heat->result,
+		noise_humidity->result, heightmap, biomemap);
 	
 	// Actually place the biome-specific nodes
 	generateBiomes();
@@ -244,16 +243,10 @@ void MapgenV5::makeChunk(BlockMakeData *data) {
 	}
 
 	// Generate the registered decorations
-	for (size_t i = 0; i != emerge->decorations.size(); i++) {
-		Decoration *deco = emerge->decorations[i];
-		deco->placeDeco(this, blockseed + i, node_min, node_max);
-	}
+	emerge->decomgr->placeAllDecos(this, blockseed, node_min, node_max);
 
 	// Generate the registered ores
-	for (unsigned int i = 0; i != emerge->ores.size(); i++) {
-		Ore *ore = emerge->ores[i];
-		ore->placeOre(this, blockseed + i, node_min, node_max);
-	}
+	emerge->oremgr->placeAllOres(this, blockseed, node_min, node_max);
 
 	// Sprinkle some dust on top after everything else was generated
 	dustTopNodes();
@@ -290,10 +283,10 @@ void MapgenV5::calculateNoise() {
 	noise_ground->perlinMap3D(x, y, z, true);
 	noise_ground->transformNoiseMap();
 
-	//if (spflags & MGV5_BLOBS) {
+	if (spflags & MGV5_BLOBS) {
 		noise_crumble->perlinMap3D(x, y, z, true);
 		noise_wetness->perlinMap3D(x, y, z, false);
-	//}
+	}
 
 	noise_heat->perlinMap2D(x, z);
 	noise_humidity->perlinMap2D(x, z);
@@ -402,7 +395,7 @@ void MapgenV5::generateBiomes() {
 	
 	for (s16 z = node_min.Z; z <= node_max.Z; z++)
 	for (s16 x = node_min.X; x <= node_max.X; x++, index++) {
-		Biome *biome  = bmgr->biomes[biomemap[index]];
+		Biome *biome  = (Biome *)bmgr->get(biomemap[index]);
 		s16 dfiller   = biome->depth_filler + noise_filler_depth->result[index];
 		s16 y0_top    = biome->depth_top;
 		s16 y0_filler = biome->depth_filler + biome->depth_top + dfiller;
@@ -415,11 +408,11 @@ void MapgenV5::generateBiomes() {
 		
 		for (s16 y = node_max.Y; y >= node_min.Y; y--) {
 			content_t c = vm->m_data[i].getContent();
-			if ((c == c_stone || c == c_dirt_with_grass
-					|| c == c_dirt
-					|| c == c_sand
-					|| c == c_lava_source
-					|| c == c_gravel) && have_air) {
+			bool is_replaceable_content =
+				c == c_stone || c == c_dirt_with_grass || c == c_dirt ||
+				c == c_sand  || c == c_lava_source     || c == c_gravel;
+
+			if (is_replaceable_content && have_air) {
 				content_t c_below = vm->m_data[i - em.X].getContent();
 				
 				if (c_below != CONTENT_AIR) {
@@ -464,7 +457,7 @@ void MapgenV5::dustTopNodes() {
 
 	for (s16 z = node_min.Z; z <= node_max.Z; z++)
 	for (s16 x = node_min.X; x <= node_max.X; x++, index++) {
-		Biome *biome = bmgr->biomes[biomemap[index]];
+		Biome *biome = (Biome *)bmgr->get(biomemap[index]);
 	
 		if (biome->c_dust == CONTENT_IGNORE)
 			continue;

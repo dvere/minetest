@@ -23,7 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "mapgen.h"
 
 /////////////////// Mapgen V5 flags
-//#define MGV5_BLOBS 0x01
+#define MGV5_BLOBS 0x01
 
 extern FlagDesc flagdesc_mapgen_v5[];
 
@@ -50,7 +50,7 @@ struct MapgenV5Params : public MapgenSpecificParams {
 class MapgenV5 : public Mapgen {
 public:
 	EmergeManager *emerge;
-	BiomeDefManager *bmgr;
+	BiomeManager *bmgr;
 
 	int ystride;
 	int zstride;
