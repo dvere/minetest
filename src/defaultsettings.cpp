@@ -131,6 +131,7 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("desynchronize_mapblock_texture_animation", "true");
 	settings->setDefault("selectionbox_width","2");
 	settings->setDefault("hud_hotbar_max_width","1.0");
+	settings->setDefault("enable_local_map_saving", "false");
 
 	settings->setDefault("mip_map", "false");
 	settings->setDefault("anisotropic_filter", "false");
@@ -288,7 +289,6 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("enable_particles", "false");
 	settings->setDefault("video_driver", "ogles1");
 	settings->setDefault("touchtarget", "true");
-	settings->setDefault("main_menu_script","/sdcard/Minetest/builtin/mainmenu/init_android.lua");
 	settings->setDefault("TMPFolder","/sdcard/Minetest/tmp/");
 	settings->setDefault("touchscreen_threshold","20");
 	settings->setDefault("smooth_lighting", "false");
