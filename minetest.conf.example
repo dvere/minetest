@@ -62,6 +62,9 @@
 #keymap_quicktune_dec = KEY_NEXT
 #keymap_quicktune_inc = KEY_PRIOR
 
+#if set to true, you can place blocks at the position (feet + eye level) where you stand; this is helpful when working with nodeboxes
+#enable_build_where_you_stand = false
+
 # Minimum FPS
 # The amount of rendered stuff is dynamically set according to this
 #wanted_fps = 30
@@ -212,6 +215,8 @@
 #directional_colored_fog = true
 #tooltip_show_delay = 400
 # Delay showing tooltips, in miliseconds
+#screen_dpi = 72
+# adjust dpi configuration to your screen (Desktop only) e.g. for 4k screens
 
 # Default timeout for cURL, in milliseconds
 # Only has an effect if compiled with cURL

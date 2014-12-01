@@ -69,9 +69,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "profiler.h"
 #include "log.h"
 #include "mods.h"
-#if USE_FREETYPE
-#include "xCGUITTFont.h"
-#endif
 #include "util/string.h"
 #include "subgame.h"
 #include "quicktune.h"
@@ -80,6 +77,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "guiEngine.h"
 #include "mapsector.h"
 #include "player.h"
+#include "fontengine.h"
 
 #include "database-sqlite3.h"
 #ifdef USE_LEVELDB
@@ -157,7 +155,7 @@ static void list_game_ids();
 static void list_worlds();
 static void setup_log_params(const Settings &cmd_args);
 static bool create_userdata_path();
-static bool init_common(int *log_level, const Settings &cmd_args);
+static bool init_common(int *log_level, const Settings &cmd_args, int argc, char *argv[]);
 static void startup_message();
 static bool read_config_file(const Settings &cmd_args);
 static void init_debug_streams(int *log_level, const Settings &cmd_args);
@@ -831,7 +829,7 @@ int main(int argc, char *argv[])
 	}
 
 	GameParams game_params;
-	if (!init_common(&game_params.log_level, cmd_args))
+	if (!init_common(&game_params.log_level, cmd_args, argc, argv))
 		return 1;
 
 #ifndef __ANDROID__
@@ -1071,6 +1069,8 @@ static bool create_userdata_path()
 	porting::setExternalStorageDir(porting::jnienv);
 	if (!fs::PathExists(porting::path_user)) {
 		success = fs::CreateDir(porting::path_user);
+	} else {
+		success = true;
 	}
 	porting::copyAssets();
 #else
@@ -1084,7 +1084,7 @@ static bool create_userdata_path()
 	return success;
 }
 
-static bool init_common(int *log_level, const Settings &cmd_args)
+static bool init_common(int *log_level, const Settings &cmd_args, int argc, char *argv[])
 {
 	startup_message();
 	set_default_settings(g_settings);
@@ -1569,13 +1569,11 @@ ClientLauncher::~ClientLauncher()
 	if (input)
 		delete input;
 
+	if (g_fontengine)
+		delete g_fontengine;
+
 	if (device)
 		device->drop();
-
-#if USE_FREETYPE
-	if (use_freetype && font != NULL)
-		font->drop();
-#endif
 }
 
 bool ClientLauncher::run(GameParams &game_params, const Settings &cmd_args)
@@ -1590,8 +1588,6 @@ bool ClientLauncher::run(GameParams &game_params, const Settings &cmd_args)
 		errorstream << "Could not initialize game engine." << std::endl;
 		return false;
 	}
-
-	late_init_default_settings(g_settings);
 
 	// Speed tests (done after irrlicht is loaded to get timer)
 	if (cmd_args.getFlag("speedtests")) {
@@ -1628,44 +1624,14 @@ bool ClientLauncher::run(GameParams &game_params, const Settings &cmd_args)
 
 	guienv = device->getGUIEnvironment();
 	skin = guienv->getSkin();
-	std::string font_path = g_settings->get("font_path");
-
-#if USE_FREETYPE
-
-	if (use_freetype) {
-		std::string fallback;
-		if (is_yes(gettext("needs_fallback_font")))
-			fallback = "fallback_";
-		u16 font_size = g_settings->getU16(fallback + "font_size");
-		font_path = g_settings->get(fallback + "font_path");
-		u32 font_shadow = g_settings->getU16(fallback + "font_shadow");
-		u32 font_shadow_alpha = g_settings->getU16(fallback + "font_shadow_alpha");
-		font = gui::CGUITTFont::createTTFont(guienv,
-				font_path.c_str(), font_size, true, true,
-				font_shadow, font_shadow_alpha);
-	} else {
-		font = guienv->getFont(font_path.c_str());
-	}
-#else
-	font = guienv->getFont(font_path.c_str());
-#endif
-	if (font)
-		skin->setFont(font);
-	else
-		errorstream << "WARNING: Font file was not found. Using default font."
-		            << std::endl;
-
-	font = skin->getFont(); // If font was not found, this will get us one
-	assert(font);
-
-	u32 text_height = font->getDimension(L"Hello, world!").Height;
-	infostream << "text_height=" << text_height << std::endl;
-
 	skin->setColor(gui::EGDC_BUTTON_TEXT, video::SColor(255, 255, 255, 255));
 	skin->setColor(gui::EGDC_3D_HIGH_LIGHT, video::SColor(255, 0, 0, 0));
 	skin->setColor(gui::EGDC_3D_SHADOW, video::SColor(255, 0, 0, 0));
 	skin->setColor(gui::EGDC_HIGH_LIGHT, video::SColor(255, 70, 100, 50));
 	skin->setColor(gui::EGDC_HIGH_LIGHT_TEXT, video::SColor(255, 255, 255, 255));
+
+	g_fontengine = new FontEngine(g_settings, guienv);
+	assert(g_fontengine != NULL);
 
 #if (IRRLICHT_VERSION_MAJOR >= 1 && IRRLICHT_VERSION_MINOR >= 8) || IRRLICHT_VERSION_MAJOR >= 2
 	// Irrlicht 1.8 input colours
@@ -1762,7 +1728,6 @@ bool ClientLauncher::run(GameParams &game_params, const Settings &cmd_args)
 				random_input,
 				input,
 				device,
-				font,
 				worldspec.path,
 				current_playername,
 				current_password,
@@ -1816,8 +1781,17 @@ bool ClientLauncher::run(GameParams &game_params, const Settings &cmd_args)
 
 void ClientLauncher::init_args(GameParams &game_params, const Settings &cmd_args)
 {
+
+	skip_main_menu = cmd_args.getFlag("go");
+
+	// FIXME: This is confusing (but correct)
+
+	/* If world_path is set then override it unless skipping the main menu using
+	 * the --go command line param. Else, give preference to the address
+	 * supplied on the command line
+	 */
 	address = g_settings->get("address");
-	if (game_params.world_path != "")
+	if (game_params.world_path != "" && !skip_main_menu)
 		address = "";
 	else if (cmd_args.exists("address"))
 		address = cmd_args.get("address");
@@ -1825,8 +1799,6 @@ void ClientLauncher::init_args(GameParams &game_params, const Settings &cmd_args
 	playername = g_settings->get("name");
 	if (cmd_args.exists("name"))
 		playername = cmd_args.get("name");
-
-	skip_main_menu = cmd_args.getFlag("go");
 
 	list_video_modes = cmd_args.getFlag("videomodes");
 

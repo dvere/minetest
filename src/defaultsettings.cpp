@@ -52,12 +52,18 @@ void set_default_settings(Settings *settings)
 	settings->setDefault("keymap_toggle_hud", "KEY_F1");
 	settings->setDefault("keymap_toggle_chat", "KEY_F2");
 	settings->setDefault("keymap_toggle_force_fog_off", "KEY_F3");
-	settings->setDefault("keymap_toggle_update_camera", "KEY_F4");
+	settings->setDefault("keymap_toggle_update_camera",
+#if DEBUG
+			"KEY_F4");
+#else
+			"none");
+#endif
 	settings->setDefault("keymap_toggle_debug", "KEY_F5");
 	settings->setDefault("keymap_toggle_profiler", "KEY_F6");
 	settings->setDefault("keymap_camera_mode", "KEY_F7");
 	settings->setDefault("keymap_increase_viewing_range_min", "+");
 	settings->setDefault("keymap_decrease_viewing_range_min", "-");
+	settings->setDefault("enable_build_where_you_stand", "false" );
 	settings->setDefault("3d_mode", "none");
 	settings->setDefault("3d_paralax_strength", "0.025");
 	settings->setDefault("aux1_descends", "false");
@@ -181,10 +187,23 @@ void set_default_settings(Settings *settings)
 
 	settings->setDefault("fallback_font_shadow", "1");
 	settings->setDefault("fallback_font_shadow_alpha", "128");
+
+	std::stringstream fontsize;
+	fontsize << TTF_DEFAULT_FONT_SIZE;
+
+	settings->setDefault("font_size", fontsize.str());
+	settings->setDefault("mono_font_size", fontsize.str());
+	settings->setDefault("fallback_font_size", fontsize.str());
 #else
 	settings->setDefault("freetype", "false");
-	settings->setDefault("font_path", porting::getDataPath("fonts" DIR_DELIM "fontlucida.png"));
-	settings->setDefault("mono_font_path", porting::getDataPath("fonts" DIR_DELIM "fontdejavusansmono.png"));
+	settings->setDefault("font_path", porting::getDataPath("fonts" DIR_DELIM "lucida_sans"));
+	settings->setDefault("mono_font_path", porting::getDataPath("fonts" DIR_DELIM "mono_dejavu_sans"));
+
+	std::stringstream fontsize;
+	fontsize << DEFAULT_FONT_SIZE;
+
+	settings->setDefault("font_size", fontsize.str());
+	settings->setDefault("mono_font_size", fontsize.str());
 #endif
 
 	// Server stuff
@@ -311,22 +330,8 @@ void set_default_settings(Settings *settings)
 		settings->setDefault("gui_scaling", "0.7");
 	}
 	settings->setDefault("curl_verify_cert","false");
-#endif
-}
-
-void late_init_default_settings(Settings* settings)
-{
-#ifndef SERVER
-	std::stringstream fontsize;
-	fontsize << floor(
-			DEFAULT_FONT_SIZE *
-			porting::getDisplayDensity() *
-			settings->getFloat("gui_scaling")
-			);
-
-	settings->setDefault("font_size", fontsize.str());
-	settings->setDefault("mono_font_size", fontsize.str());
-	settings->setDefault("fallback_font_size", fontsize.str());
+#else
+	settings->setDefault("screen_dpi", "72");
 #endif
 }
 
