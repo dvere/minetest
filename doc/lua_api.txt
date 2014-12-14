@@ -482,23 +482,65 @@ A box of a regular node would look like:
 
 type = "leveled" is same as "fixed", but y2 will be automatically set to level from param2
 
+
 Meshes
 -----------
 If drawtype "mesh" is used tiles should hold model materials textures.
 Only static meshes are implemented.
 For supported model formats see Irrlicht engine documentation.
-    
+
+
+Noise Parameters
+--------------------
+Noise Parameters, or commonly called NoiseParams, define the properties of perlin noise.
+ - offset
+    Offset that the noise is translated by (i.e. added) after calculation.
+ - scale
+    Factor that the noise is scaled by (i.e. multiplied) after calculation.
+ - spread
+    Vector containing values by which each coordinate is divided by before calculation.
+    Higher spread values result in larger noise features.
+    A value of {x=250, y=250, z=250} is common.
+ - seed
+    Random seed for the noise.  Add the world seed to a seed offset for world-unique noise.
+    In the case of minetest.get_perlin(), this value has the world seed automatically added.
+ - octaves
+    Number of times the noise gradient is accumulated into the noise.
+    Increase this number to increase the amount of detail in the resulting noise.
+    A value of 6 is common.
+ - persistence
+    Factor by which the effect of the noise gradient function changes with each successive octave.
+    Values less than 1 make the details of successive octaves' noise diminish, while values
+    greater than 1 make successive octaves stronger.
+    A value of 0.6 is common.
+ - lacunarity
+    Factor by which the noise feature sizes change with each successive octave.
+    A value of 2.0 is common.
+ - flags
+    Leave this field unset for no special handling.
+    Currently supported are:
+    - defaults
+       Specify this if you would like to keep auto-selection of eased/not-eased while specifying
+       some other flags.
+    - eased
+       Maps noise gradient values onto a quintic S-curve before performing interpolation.
+       This results in smooth, rolling noise.  Disable this for sharp-looking noise.
+       If no flags are specified (or defaults is), 2D noise is eased and 3D noise is not eased.
+    - absvalue
+       Accumulates the absolute value of each noise gradient result.
+
+
 Ore types
 ---------------
 These tell in what manner the ore is generated.
 All default ores are of the uniformly-distributed scatter type.
 
-- scatter
+ - scatter
     Randomly chooses a location and generates a cluster of ore.
     If noise_params is specified, the ore will be placed if the 3d perlin noise at
     that point is greater than the noise_threshold, giving the ability to create a non-equal
     distribution of ore.
-- sheet
+ - sheet
     Creates a sheet of ore in a blob shape according to the 2d perlin noise described by noise_params.
     The relative height of the sheet can be controlled by the same perlin noise as well, by specifying
     a non-zero 'scale' parameter in noise_params.  IMPORTANT: The noise is not transformed by offset or
@@ -506,9 +548,10 @@ All default ores are of the uniformly-distributed scatter type.
     The height of the blob is randomly scattered, with a maximum height of clust_size.
     clust_scarcity and clust_num_ores are ignored.
     This is essentially an improved version of the so-called "stratus" ore seen in some unofficial mods.
-- claylike - NOT YET IMPLEMENTED
+ - claylike - NOT YET IMPLEMENTED
     Places ore if there are no more than clust_scarcity number of specified nodes within a Von Neumann
     neighborhood of clust_size radius.
+
 
 Ore attributes
 -------------------
@@ -534,6 +577,7 @@ The default value is simple, and is currently the only type supported.
     probability of a node randomly appearing when placed.  This decoration type is intended to be used
     for multi-node sized discrete structures, such as trees, cave spikes, rocks, and so on.
 
+
 Schematic specifier
 --------------------
     A schematic specifier identifies a schematic by either a filename to a Minetest Schematic file (.mts)
@@ -552,6 +596,7 @@ When passed to minetest.create_schematic, probability is an integer value rangin
 
 Important note: Node aliases cannot be used for a raw schematic provided when registering as a decoration.
 
+
 Schematic attributes
 ---------------------
 See section Flag Specifier Format.
@@ -562,6 +607,7 @@ Currently supported flags:  place_center_x, place_center_y, place_center_z
     Placement of this decoration is centered along the Y axis.
  - place_center_z
     Placement of this decoration is centered along the Z axis.
+
 
 HUD element types
 -------------------
@@ -1280,6 +1326,7 @@ vector.distance(p1, p2) -> number
 vector.length(v) -> number
 vector.normalize(v) -> vector
 vector.round(v) -> vector
+vector.apply(v, func) -> vector
 vector.equals(v1, v2) -> bool
 For the following functions x can be either a vector or a number.
 vector.add(v, x) -> vector
@@ -1296,6 +1343,9 @@ dump(obj, dumped={})
 math.hypot(x, y)
 ^ Get the hypotenuse of a triangle with legs x and y.
   Useful for distance calculation.
+math.sign(x, tolerance)
+^ Get the sign of a number
+  Optional: Also returns 0 when the absolute value is within the tolerance (default 0)
 string:split(separator)
 ^ e.g. string:split("a,b", ",") == {"a","b"}
 string:trim()
@@ -1525,14 +1575,16 @@ minetest.find_node_near(pos, radius, nodenames) -> pos or nil
 ^ nodenames: e.g. {"ignore", "group:tree"} or "default:dirt"
 minetest.find_nodes_in_area(minp, maxp, nodenames) -> list of positions
 ^ nodenames: e.g. {"ignore", "group:tree"} or "default:dirt"
+minetest.get_perlin(noiseparams)
 minetest.get_perlin(seeddiff, octaves, persistence, scale)
 ^ Return world-specific perlin noise (int(worldseed)+seeddiff)
 minetest.get_voxel_manip()
 ^ Return voxel manipulator object
-minetest.set_gen_notify(flags)
+minetest.set_gen_notify(flags, {deco_ids})
 ^ Set the types of on-generate notifications that should be collected
-^ flags is a comma-delimited combination of:
-^ dungeon, temple, cave_begin, cave_end, large_cave_begin, large_cave_end
+^ flags is a flag field with the available flags:
+^   dungeon, temple, cave_begin, cave_end, large_cave_begin, large_cave_end, decoration
+^ The second parameter is a list of IDS of decorations which notification is requested for
 minetest.get_mapgen_object(objectname)
 ^ Return requested mapgen object if available (see Mapgen objects)
 minetest.set_mapgen_params(MapgenParams)
@@ -1542,10 +1594,10 @@ minetest.set_mapgen_params(MapgenParams)
 ^ Leave field unset to leave that parameter unchanged
 ^ flags contains a comma-delimited string of flags to set, or if the prefix "no" is attached, clears instead.
 ^ flags is in the same format and has the same options as 'mg_flags' in minetest.conf
-minetest.set_noiseparam_defaults({np1=NoiseParams, np2= NoiseParams, ...})
-^ Sets the default value of a noiseparam setting
-^ Takes a table as an argument that maps one or more setting names to NoiseParams structures
-^ Possible setting names consist of any NoiseParams setting exposed through the global settings
+minetest.set_noiseparams(name, noiseparams, set_default)
+^ Sets the noiseparams setting of 'name' to the noiseparams table specified in 'noiseparams'.
+^ 'set_default', is an optional boolean (default of true) that specifies whether the setting
+^ should be applied to the default config or current active config
 minetest.clear_objects()
 ^ clear all objects in the environments
 minetest.line_of_sight(pos1, pos2, stepsize) -> true/false, pos
@@ -2104,8 +2156,8 @@ methods:
                   implementation making bad distribution otherwise.
 
 PerlinNoise: A perlin noise generator
-- Can be created via PerlinNoise(seed, octaves, persistence, scale)
-- Also minetest.get_perlin(seeddiff, octaves, persistence, scale)
+- Can be created via PerlinNoise(seed, octaves, persistence, scale) or PerlinNoise(noiseparams)
+- Also minetest.get_perlin(seeddiff, octaves, persistence, scale) or minetest.get_perlin(noiseparams)
 methods:
 - get2d(pos) -> 2d noise value at pos={x=,y=}
 - get3d(pos) -> 3d noise value at pos={x=,y=,z=}
@@ -2216,7 +2268,9 @@ current mapgen.
     Returns a table mapping requested generation notification types to arrays of positions at which the
 corresponding generated structures are located at within the current chunk.  To set the capture of positions
 of interest to be recorded on generate, use minetest.set_gen_notify().
-Possible fields of the table returned are:  dungeon, temple, cave_begin, cave_end, large_cave_begin, large_cave_end
+Possible fields of the table returned are:
+	dungeon, temple, cave_begin, cave_end, large_cave_begin, large_cave_end, decoration
+Decorations have a key in the format of "decoration#id", where id is the numeric unique decoration ID.
 
 Registered entities
 --------------------
@@ -2506,7 +2560,7 @@ Node definition (register_node)
     ^ Node destructor; always called after removing node
     ^ default: nil
 
-    after_place_node = func(pos, placer, itemstack, pointed_thing),
+    after_place_node = func(pos, placer, itemstack, pointed_thing)
     ^ Called after constructing node when node was placed using
       minetest.item_place_node / minetest.place_node
     ^ If return true no item is taken from itemstack

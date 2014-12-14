@@ -439,7 +439,7 @@ PointedThing getPointedThing(Client *client, v3f player_position,
 /* Profiler display */
 
 void update_profiler_gui(gui::IGUIStaticText *guitext_profiler, FontEngine *fe,
-		u32 show_profiler, u32 show_profiler_max)
+		u32 show_profiler, u32 show_profiler_max, s32 screen_height)
 {
 	if (show_profiler == 0) {
 		guitext_profiler->setVisible(false);
@@ -456,9 +456,20 @@ void update_profiler_gui(gui::IGUIStaticText *guitext_profiler, FontEngine *fe,
 		if (w < 400)
 			w = 400;
 
-		core::rect<s32> rect(6, 4 + (fe->getTextHeight() + 5) * 2, 12 + w,
-				     8 + (fe->getTextHeight() + 5) * 2 +
-				     fe->getTextHeight());
+		unsigned text_height = fe->getTextHeight();
+
+		core::position2di upper_left, lower_right;
+
+		upper_left.X  = 6;
+		upper_left.Y  = (text_height + 5) * 2;
+		lower_right.X = 12 + w;
+		lower_right.Y = upper_left.Y + (text_height + 1) * MAX_PROFILER_TEXT_ROWS;
+
+		if (lower_right.Y > screen_height * 2 / 3)
+			lower_right.Y = screen_height * 2 / 3;
+
+		core::rect<s32> rect(upper_left, lower_right);
+
 		guitext_profiler->setRelativePosition(rect);
 		guitext_profiler->setVisible(true);
 	}
@@ -1502,8 +1513,9 @@ protected:
 	void updateFrame(std::vector<aabb3f> &highlight_boxes, ProfilerGraph *graph,
 			RunStats *stats, GameRunData *runData,
 			f32 dtime, const VolatileRunFlags &flags, const CameraOrientation &cam);
-	void updateGui(float *statustext_time, const RunStats &stats, f32 dtime,
-			const VolatileRunFlags &flags, const CameraOrientation &cam);
+	void updateGui(float *statustext_time, const RunStats &stats,
+			const GameRunData& runData, f32 dtime, const VolatileRunFlags &flags,
+			const CameraOrientation &cam);
 	void updateProfilerGraphs(ProfilerGraph *graph);
 
 	// Misc
@@ -1580,6 +1592,23 @@ private:
 	KeyCache keycache;
 
 	IntervalLimiter profiler_interval;
+
+	/* TODO: Add a callback function so these can be updated when a setting
+	 *       changes.  At this point in time it doesn't matter (e.g. /set
+	 *       is documented to change server settings only)
+	 *
+	 * TODO: Local caching of settings is not optimal and should at some stage
+	 *       be updated to use a global settings object for getting thse values
+	 *       (as opposed to the this local caching). This can be addressed in
+	 *       a later release.
+	 */
+	bool m_cache_doubletap_jump;
+	bool m_cache_enable_node_highlighting;
+	bool m_cache_enable_clouds;
+	bool m_cache_enable_particles;
+	bool m_cache_enable_fog;
+	f32  m_cache_mouse_sensitivity;
+	f32  m_repeat_right_click_time;
 };
 
 Game::Game() :
@@ -1604,7 +1633,13 @@ Game::Game() :
 	local_inventory(NULL),
 	hud(NULL)
 {
-
+	m_cache_doubletap_jump            = g_settings->getBool("doubletap_jump");
+	m_cache_enable_node_highlighting  = g_settings->getBool("enable_node_highlighting");
+	m_cache_enable_clouds             = g_settings->getBool("enable_clouds");
+	m_cache_enable_particles          = g_settings->getBool("enable_particles");
+	m_cache_enable_fog                = g_settings->getBool("enable_fog");
+	m_cache_mouse_sensitivity         = g_settings->getFloat("mouse_sensitivity");
+	m_repeat_right_click_time         = g_settings->getFloat("repeat_rightclick_time");
 }
 
 
@@ -1661,6 +1696,8 @@ bool Game::startup(bool *kill,
 
 	driver              = device->getVideoDriver();
 	smgr                = device->getSceneManager();
+
+	smgr->getParameters()->setAttribute(scene::OBJ_LOADER_IGNORE_MATERIAL_FILES, true);
 
 	if (!init(map_dir, address, port, gamespec))
 		return false;
@@ -1933,7 +1970,7 @@ bool Game::createClient(const std::string &playername,
 
 	/* Clouds
 	 */
-	if (g_settings->getBool("enable_clouds")) {
+	if (m_cache_enable_clouds) {
 		clouds = new Clouds(smgr->getRootSceneNode(), smgr, -1, time(0));
 		if (!clouds) {
 			*error_message = L"Memory allocation error";
@@ -2342,7 +2379,8 @@ void Game::updateProfilers(const GameRunData &run_data, const RunStats &stats,
 		}
 
 		update_profiler_gui(guitext_profiler, g_fontengine,
-				run_data.profiler_current_page, run_data.profiler_max_page);
+				run_data.profiler_current_page, run_data.profiler_max_page,
+				driver->getScreenSize().Height);
 
 		g_profiler->clear();
 	}
@@ -2453,7 +2491,7 @@ void Game::processUserInput(VolatileRunFlags *flags,
 #endif
 
 	// Increase timer for double tap of "keymap_jump"
-	if (g_settings->getBool("doubletap_jump") && interact_args->jump_timer <= 0.2)
+	if (m_cache_doubletap_jump && interact_args->jump_timer <= 0.2)
 		interact_args->jump_timer += dtime;
 
 	processKeyboardInput(
@@ -2647,7 +2685,7 @@ void Game::toggleFreeMove(float *statustext_time)
 
 void Game::toggleFreeMoveAlt(float *statustext_time, float *jump_timer)
 {
-	if (g_settings->getBool("doubletap_jump") && *jump_timer < 0.2f)
+	if (m_cache_doubletap_jump && *jump_timer < 0.2f)
 		toggleFreeMove(statustext_time);
 }
 
@@ -2754,7 +2792,7 @@ void Game::toggleProfiler(float *statustext_time, u32 *profiler_current_page,
 
 	// FIXME: This updates the profiler with incomplete values
 	update_profiler_gui(guitext_profiler, g_fontengine, *profiler_current_page,
-			profiler_max_page);
+			profiler_max_page, driver->getScreenSize().Height);
 
 	if (*profiler_current_page != 0) {
 		std::wstringstream sstr;
@@ -2858,7 +2896,7 @@ void Game::updateCameraDirection(CameraOrientation *cam,
 
 			//infostream<<"window active, pos difference "<<dx<<","<<dy<<std::endl;
 
-			float d = g_settings->getFloat("mouse_sensitivity");
+			float d = m_cache_mouse_sensitivity;
 			d = rangelim(d, 0.01, 100.0);
 			cam->camera_yaw -= dx * d;
 			cam->camera_pitch += dy * d;
@@ -3332,7 +3370,7 @@ void Game::processPlayerInteraction(std::vector<aabb3f> &highlight_boxes,
 	if (pointed != runData->pointed_old) {
 		infostream << "Pointing at " << pointed.dump() << std::endl;
 
-		if (g_settings->getBool("enable_node_highlighting")) {
+		if (m_cache_enable_node_highlighting) {
 			if (pointed.type == POINTEDTHING_NODE) {
 				client->setHighlighted(pointed.node_undersurface, show_hud);
 			} else {
@@ -3445,8 +3483,7 @@ void Game::handlePointingAtNode(GameRunData *runData,
 	}
 
 	if ((input->getRightClicked() ||
-			runData->repeat_rightclick_timer >=
-			g_settings->getFloat("repeat_rightclick_time")) &&
+			runData->repeat_rightclick_timer >= m_repeat_right_click_time) &&
 			client->checkPrivilege("interact")) {
 		runData->repeat_rightclick_timer = 0;
 		infostream << "Ground right-clicked" << std::endl;
@@ -3581,7 +3618,7 @@ void Game::handleDigging(GameRunData *runData,
 	} else {
 		runData->dig_time_complete = params.time;
 
-		if (g_settings->getBool("enable_particles")) {
+		if (m_cache_enable_particles) {
 			const ContentFeatures &features =
 					client->getNodeDefManager()->get(n);
 			addPunchingParticles(gamedef, smgr, player,
@@ -3628,7 +3665,7 @@ void Game::handleDigging(GameRunData *runData,
 		if (is_valid_position)
 			client->removeNode(nodepos);
 
-		if (g_settings->getBool("enable_particles")) {
+		if (m_cache_enable_particles) {
 			const ContentFeatures &features =
 				client->getNodeDefManager()->get(wasnode);
 			addDiggingParticles
@@ -3764,7 +3801,7 @@ void Game::updateFrame(std::vector<aabb3f> &highlight_boxes,
 		Fog
 	*/
 
-	if (g_settings->getBool("enable_fog") && !flags.force_fog_off) {
+	if (m_cache_enable_fog && !flags.force_fog_off) {
 		driver->setFog(
 				sky->getBgColor(),
 				video::EFT_FOG_LINEAR,
@@ -3836,7 +3873,7 @@ void Game::updateFrame(std::vector<aabb3f> &highlight_boxes,
 		runData->update_draw_list_last_cam_dir = camera_direction;
 	}
 
-	updateGui(&runData->statustext_time, *stats, dtime, flags, cam);
+	updateGui(&runData->statustext_time, *stats, *runData, dtime, flags, cam);
 
 	/*
 	   make sure menu is on top
@@ -3913,8 +3950,9 @@ void Game::updateFrame(std::vector<aabb3f> &highlight_boxes,
 }
 
 
-void Game::updateGui(float *statustext_time, const RunStats& stats,
-		f32 dtime, const VolatileRunFlags &flags, const CameraOrientation &cam)
+void Game::updateGui(float *statustext_time, const RunStats &stats,
+		const GameRunData& runData, f32 dtime, const VolatileRunFlags &flags,
+		const CameraOrientation &cam)
 {
 	v2u32 screensize = driver->getScreenSize();
 	LocalPlayer *player = client->getEnv().getLocalPlayer();
@@ -3969,6 +4007,19 @@ void Game::updateGui(float *statustext_time, const RunStats& stats,
 		   << ") (yaw=" << (wrapDegrees_0_360(cam.camera_yaw))
 		   << ") (seed = " << ((u64)client->getMapSeed())
 		   << ")";
+
+		if (runData.pointed_old.type == POINTEDTHING_NODE) {
+			ClientMap &map = client->getEnv().getClientMap();
+			const INodeDefManager *nodedef = client->getNodeDefManager();
+			MapNode n = map.getNodeNoEx(runData.pointed_old.node_undersurface);
+			if (n.getContent() != CONTENT_IGNORE && nodedef->get(n).name != "unknown") {
+				const ContentFeatures &features = nodedef->get(n);
+				os << " (pointing_at = " << nodedef->get(n).name
+				   << " - " << features.tiledef[0].name.c_str()
+				   << ")";
+			}
+		}
+
 		guitext2->setText(narrow_to_wide(os.str()).c_str());
 		guitext2->setVisible(true);
 

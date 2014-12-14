@@ -699,7 +699,7 @@ void CNodeDefManager::updateTextures(IGameDef *gamedef)
 #ifndef SERVER
 	infostream << "CNodeDefManager::updateTextures(): Updating "
 		"textures in node definitions" << std::endl;
-	
+
 	ITextureSource *tsrc = gamedef->tsrc();
 	IShaderSource *shdsrc = gamedef->getShaderSource();
 	scene::ISceneManager* smgr = gamedef->getSceneManager();
@@ -854,8 +854,9 @@ void CNodeDefManager::updateTextures(IGameDef *gamedef)
 				v3f scale = v3f(1.0, 1.0, 1.0) * BS * f->visual_scale;
 				scaleMesh(f->mesh_ptr[0], scale);
 				recalculateBoundingBox(f->mesh_ptr[0]);
+				meshmanip->recalculateNormals(f->mesh_ptr[0], true, false);
 			}
-		} else if ((f->drawtype == NDT_NODEBOX) && 
+		} else if ((f->drawtype == NDT_NODEBOX) &&
 				((f->node_box.type == NODEBOX_REGULAR) ||
 				(f->node_box.type == NODEBOX_FIXED)) &&
 				(!f->node_box.fixed.empty())) {
@@ -866,6 +867,7 @@ void CNodeDefManager::updateTextures(IGameDef *gamedef)
 			v3f scale = v3f(1.0, 1.0, 1.0) * f->visual_scale;
 			scaleMesh(f->mesh_ptr[0], scale);
 			recalculateBoundingBox(f->mesh_ptr[0]);
+			meshmanip->recalculateNormals(f->mesh_ptr[0], true, false);
 		}
 
 		//Cache 6dfacedir and wallmounted rotated clones of meshes
@@ -886,7 +888,7 @@ void CNodeDefManager::updateTextures(IGameDef *gamedef)
 			}
 			rotateMeshBy6dFacedir(f->mesh_ptr[0], wm_to_6d[0]);
 			recalculateBoundingBox(f->mesh_ptr[0]);
-			meshmanip->recalculateNormals(f->mesh_ptr[0], true, false);			
+			meshmanip->recalculateNormals(f->mesh_ptr[0], true, false);
 		}
 	}
 #endif
@@ -1146,7 +1148,7 @@ void ContentFeatures::serializeOld(std::ostream &os, u16 protocol_version)
 		writeU8(os, drowning);
 		writeU8(os, leveled);
 		writeU8(os, liquid_range);
-	} else 
+	} else
 		throw SerializationError("ContentFeatures::serialize(): "
 			"Unsupported version requested");
 }
@@ -1283,8 +1285,8 @@ NodeResolver::~NodeResolver()
 }
 
 
-int NodeResolver::addNode(std::string n_wanted, std::string n_alt,
-		content_t c_fallback, content_t *content)
+int NodeResolver::addNode(const std::string &n_wanted, const std::string &n_alt,
+	content_t c_fallback, content_t *content)
 {
 	if (m_is_node_registration_complete) {
 		if (m_ndef->getId(n_wanted, *content))
@@ -1310,8 +1312,8 @@ int NodeResolver::addNode(std::string n_wanted, std::string n_alt,
 }
 
 
-int NodeResolver::addNodeList(const char *nodename,
-		std::vector<content_t> *content_vec)
+int NodeResolver::addNodeList(const std::string &nodename,
+	std::vector<content_t> *content_vec)
 {
 	if (m_is_node_registration_complete) {
 		std::set<content_t> idset;
@@ -1324,7 +1326,7 @@ int NodeResolver::addNodeList(const char *nodename,
 		return idset.size() ? NR_STATUS_SUCCESS : NR_STATUS_FAILURE;
 	} else {
 		m_pending_content_vecs.push_back(
-			std::make_pair(std::string(nodename), content_vec));
+			std::make_pair(nodename, content_vec));
 		return NR_STATUS_PENDING;
 	}
 }
@@ -1334,8 +1336,10 @@ bool NodeResolver::cancelNode(content_t *content)
 {
 	bool found = false;
 
-	std::list<NodeResolveInfo *>::iterator it = m_pending_contents.begin();
-	while (it != m_pending_contents.end()) {
+	for (std::list<NodeResolveInfo *>::iterator
+			it = m_pending_contents.begin();
+			it != m_pending_contents.end();
+			++it) {
 		NodeResolveInfo *nfi = *it;
 		if (nfi->output == content) {
 			it = m_pending_contents.erase(it);
@@ -1352,9 +1356,10 @@ int NodeResolver::cancelNodeList(std::vector<content_t> *content_vec)
 {
 	int num_canceled = 0;
 
-	std::list<std::pair<std::string, std::vector<content_t> *> >::iterator it;
-	it = m_pending_content_vecs.begin();
-	while (it != m_pending_content_vecs.end()) {
+	for (ContentVectorResolveList::iterator
+			it = m_pending_content_vecs.begin();
+			it != m_pending_content_vecs.end();
+			++it) {
 		if (it->second == content_vec) {
 			it = m_pending_content_vecs.erase(it);
 			num_canceled++;
@@ -1371,7 +1376,7 @@ int NodeResolver::resolveNodes()
 
 	//// Resolve pending single node name -> content ID mappings
 	while (!m_pending_contents.empty()) {
-		NodeResolveInfo *nri = m_pending_contents.front();		
+		NodeResolveInfo *nri = m_pending_contents.front();
 		m_pending_contents.pop_front();
 
 		bool success = true;
@@ -1401,7 +1406,7 @@ int NodeResolver::resolveNodes()
 
 		std::string &name = item.first;
 		std::vector<content_t> *output = item.second;
-		
+
 		std::set<content_t> idset;
 		std::set<content_t>::iterator it;
 
@@ -1409,7 +1414,7 @@ int NodeResolver::resolveNodes()
 		for (it = idset.begin(); it != idset.end(); ++it)
 			output->push_back(*it);
 
-		if (idset.size() == 0) {
+		if (idset.empty()) {
 			num_failed++;
 			errorstream << "NodeResolver::resolveNodes():  Failed to "
 				"resolve '" << name << "'" << std::endl;

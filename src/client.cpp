@@ -309,6 +309,8 @@ Client::Client(
 	} else {
 		localdb = NULL;
 	}
+
+	m_cache_smooth_lighting = g_settings->getBool("smooth_lighting");
 }
 
 void Client::Stop()
@@ -575,7 +577,7 @@ void Client::step(float dtime)
 		{
 			if(sendlist.size() == 255 || i == deleted_blocks.end())
 			{
-				if(sendlist.size() == 0)
+				if(sendlist.empty())
 					break;
 				/*
 					[0] u16 command
@@ -811,7 +813,7 @@ void Client::step(float dtime)
 			}
 		}
 		// Sync to server
-		if(removed_server_ids.size() != 0)
+		if(!removed_server_ids.empty())
 		{
 			std::ostringstream os(std::ios_base::binary);
 			writeU16(os, TOSERVER_REMOVED_SOUNDS);
@@ -2346,10 +2348,8 @@ void Client::removeNode(v3s16 p)
 			i = modified_blocks.begin();
 			i != modified_blocks.end(); ++i)
 	{
-		addUpdateMeshTask(i->first, false, false);
+		addUpdateMeshTaskWithEdge(i->first, false, true);
 	}
-	// add urgent task to update the modified node
-	addUpdateMeshTaskForNode(p, false, true);
 }
 
 void Client::addNode(v3s16 p, MapNode n, bool remove_metadata)
@@ -2370,7 +2370,7 @@ void Client::addNode(v3s16 p, MapNode n, bool remove_metadata)
 			i = modified_blocks.begin();
 			i != modified_blocks.end(); ++i)
 	{
-		addUpdateMeshTask(i->first, false, false);
+		addUpdateMeshTaskWithEdge(i->first, false, true);
 	}
 }
 	
@@ -2609,7 +2609,7 @@ void Client::addUpdateMeshTask(v3s16 p, bool ack_to_server, bool urgent)
 		data->fill(b);
 		data->setCrack(m_crack_level, m_crack_pos);
 		data->setHighlighted(m_highlighted_pos, m_show_highlighted);
-		data->setSmoothLighting(g_settings->getBool("smooth_lighting"));
+		data->setSmoothLighting(m_cache_smooth_lighting);
 	}
 
 	// Add task to queue
@@ -2619,9 +2619,7 @@ void Client::addUpdateMeshTask(v3s16 p, bool ack_to_server, bool urgent)
 void Client::addUpdateMeshTaskWithEdge(v3s16 blockpos, bool ack_to_server, bool urgent)
 {
 	try{
-		v3s16 p = blockpos + v3s16(0,0,0);
-		//MapBlock *b = m_env.getMap().getBlockNoCreate(p);
-		addUpdateMeshTask(p, ack_to_server, urgent);
+		addUpdateMeshTask(blockpos, ack_to_server, urgent);
 	}
 	catch(InvalidPositionException &e){}
 
@@ -2649,8 +2647,7 @@ void Client::addUpdateMeshTaskForNode(v3s16 nodepos, bool ack_to_server, bool ur
 	v3s16 blockpos_relative = blockpos * MAP_BLOCKSIZE;
 
 	try{
-		v3s16 p = blockpos + v3s16(0,0,0);
-		addUpdateMeshTask(p, ack_to_server, urgent);
+		addUpdateMeshTask(blockpos, ack_to_server, urgent);
 	}
 	catch(InvalidPositionException &e){}
 
@@ -2785,14 +2782,14 @@ void Client::makeScreenshot(IrrlichtDevice *device)
 			snprintf(filename, sizeof(filename), "%s" DIR_DELIM "screenshot_%u.png",
 				 g_settings->get("screenshot_path").c_str(),
 				 device->getTimer()->getRealTime());
-			std::stringstream sstr;
+			std::ostringstream sstr;
 			if (driver->writeImageToFile(image, filename)) {
 				sstr << "Saved screenshot to '" << filename << "'";
 			} else {
 				sstr << "Failed to save screenshot '" << filename << "'";
 			}
 			m_chat_queue.push_back(narrow_to_wide(sstr.str()));
-			infostream << sstr << std::endl;
+			infostream << sstr.str() << std::endl;
 			image->drop();
 		}
 		raw_image->drop();

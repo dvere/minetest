@@ -29,6 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <set>
 
 class Settings;
+struct NoiseParams;
 
 /** function type to register a changed callback */
 typedef void (*setting_changed_callback)(const std::string);
@@ -54,39 +55,35 @@ struct ValueSpec {
 		type = a_type;
 		help = a_help;
 	}
+
 	ValueType type;
 	const char *help;
 };
 
-/** function type to register a changed callback */
-
 struct SettingsEntry {
 	SettingsEntry()
 	{
-		group = NULL;
+		group    = NULL;
+		is_group = false;
 	}
 
 	SettingsEntry(const std::string &value_)
 	{
-		value = value_;
-		group = NULL;
+		value    = value_;
+		group    = NULL;
+		is_group = false;
 	}
 
 	SettingsEntry(Settings *group_)
 	{
-		group = group_;
-	}
-
-	SettingsEntry(const std::string &value_, Settings *group_)
-	{
-		value = value_;
-		group = group_;
+		group    = group_;
+		is_group = true;
 	}
 
 	std::string value;
 	Settings *group;
+	bool is_group;
 };
-
 
 class Settings {
 public:
@@ -95,7 +92,6 @@ public:
 
 	Settings & operator += (const Settings &other);
 	Settings & operator = (const Settings &other);
-
 
 	/***********************
 	 * Reading and writing *
@@ -116,10 +112,13 @@ public:
 	bool updateConfigObject(std::istream &is, std::ostream &os,
 		const std::string &end, u32 tab_depth=0);
 
-	static std::string getMultiline(std::istream &is);
-	static std::string sanitizeString(const std::string &value);
-	static void printValue(std::ostream &os, const std::string &name,
-		const SettingsEntry &entry, bool is_value_multiline, u32 tab_depth=0);
+	static bool checkNameValid(const std::string &name);
+	static bool checkValueValid(const std::string &value);
+	static std::string sanitizeName(const std::string &name);
+	static std::string sanitizeValue(const std::string &value);
+	static std::string getMultiline(std::istream &is, size_t *num_lines=NULL);
+	static void printEntry(std::ostream &os, const std::string &name,
+		const SettingsEntry &entry, u32 tab_depth=0);
 
 	/***********
 	 * Getters *
@@ -142,6 +141,9 @@ public:
 	// the behavior is undefined.
 	bool getStruct(const std::string &name, const std::string &format,
 			void *out, size_t olen) const;
+	bool getNoiseParams(const std::string &name, NoiseParams &np) const;
+	bool getNoiseParamsFromValue(const std::string &name, NoiseParams &np) const;
+	bool getNoiseParamsFromGroup(const std::string &name, NoiseParams &np) const;
 
 	// return all keys used
 	std::vector<std::string> getNames() const;
@@ -175,19 +177,24 @@ public:
 
 	// N.B. Groups not allocated with new must be set to NULL in the settings
 	// tree before object destruction.
-	void set(const std::string &name, const std::string &value);
-	void setGroup(const std::string &name, Settings *group);
-	void setDefault(const std::string &name, const std::string &value);
-	void setGroupDefault(const std::string &name, Settings *group);
-	void setBool(const std::string &name, bool value);
-	void setS16(const std::string &name, s16 value);
-	void setS32(const std::string &name, s32 value);
-	void setU64(const std::string &name, u64 value);
-	void setFloat(const std::string &name, float value);
-	void setV2F(const std::string &name, v2f value);
-	void setV3F(const std::string &name, v3f value);
-	void setFlagStr(const std::string &name, u32 flags,
+	bool setEntry(const std::string &name, const void *entry,
+		bool set_group, bool set_default);
+	bool set(const std::string &name, const std::string &value);
+	bool setDefault(const std::string &name, const std::string &value);
+	bool setGroup(const std::string &name, Settings *group);
+	bool setGroupDefault(const std::string &name, Settings *group);
+	bool setBool(const std::string &name, bool value);
+	bool setS16(const std::string &name, s16 value);
+	bool setU16(const std::string &name, u16 value);
+	bool setS32(const std::string &name, s32 value);
+	bool setU64(const std::string &name, u64 value);
+	bool setFloat(const std::string &name, float value);
+	bool setV2F(const std::string &name, v2f value);
+	bool setV3F(const std::string &name, v3f value);
+	bool setFlagStr(const std::string &name, u32 flags,
 		const FlagDesc *flagdesc, u32 flagmask);
+	bool setNoiseParams(const std::string &name, const NoiseParams &np,
+		bool set_default=false);
 	// N.B. if setStruct() is used to write a non-POD aggregate type,
 	// the behavior is undefined.
 	bool setStruct(const std::string &name, const std::string &format, void *value);

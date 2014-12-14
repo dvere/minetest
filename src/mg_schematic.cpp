@@ -30,6 +30,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 const char *SchematicManager::ELEMENT_TITLE = "schematic";
 
+///////////////////////////////////////////////////////////////////////////////
+
+
+SchematicManager::SchematicManager(IGameDef *gamedef) :
+	GenElementManager(gamedef)
+{
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -57,7 +65,8 @@ void Schematic::updateContentIds()
 
 	flags |= SCHEM_CIDS_UPDATED;
 
-	for (int i = 0; i != size.X * size.Y * size.Z; i++)
+	size_t bufsize = size.X * size.Y * size.Z;
+	for (size_t i = 0; i != bufsize; i++)
 		schemdata[i].setContent(c_nodes[schemdata[i].getContent()]);
 }
 

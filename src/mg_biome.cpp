@@ -29,20 +29,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 const char *BiomeManager::ELEMENT_TITLE = "biome";
 
-NoiseParams nparams_biome_def_heat(50, 50, v3f(500.0, 500.0, 500.0), 5349, 3, 0.70);
-NoiseParams nparams_biome_def_humidity(50, 50, v3f(500.0, 500.0, 500.0), 842, 3, 0.55);
-
 
 ///////////////////////////////////////////////////////////////////////////////
 
-
-BiomeManager::BiomeManager(IGameDef *gamedef)
+BiomeManager::BiomeManager(IGameDef *gamedef) :
+	GenElementManager(gamedef)
 {
-	NodeResolver *resolver = gamedef->getNodeDefManager()->getResolver();
-
-	np_heat     = &nparams_biome_def_heat;
-	np_humidity = &nparams_biome_def_humidity;
-
 	// Create default biome to be used in case none exist
 	Biome *b = new Biome;
 
@@ -56,11 +48,12 @@ BiomeManager::BiomeManager(IGameDef *gamedef)
 	b->heat_point     = 0.0;
 	b->humidity_point = 0.0;
 
-	resolver->addNode("air",                 "", CONTENT_AIR, &b->c_top);
-	resolver->addNode("air",                 "", CONTENT_AIR, &b->c_filler);
-	resolver->addNode("mapgen_water_source", "", CONTENT_AIR, &b->c_water);
-	resolver->addNode("air",                 "", CONTENT_AIR, &b->c_dust);
-	resolver->addNode("mapgen_water_source", "", CONTENT_AIR, &b->c_dust_water);
+	m_resolver->addNode("air",                 "", CONTENT_AIR, &b->c_top);
+	m_resolver->addNode("air",                 "", CONTENT_AIR, &b->c_filler);
+	m_resolver->addNode("mapgen_stone",        "", CONTENT_AIR, &b->c_stone);
+	m_resolver->addNode("mapgen_water_source", "", CONTENT_AIR, &b->c_water);
+	m_resolver->addNode("air",                 "", CONTENT_AIR, &b->c_dust);
+	m_resolver->addNode("mapgen_water_source", "", CONTENT_AIR, &b->c_dust_water);
 
 	add(b);
 }
@@ -109,6 +102,24 @@ Biome *BiomeManager::getBiome(float heat, float humidity, s16 y)
 			biome_closest = b;
 		}
 	}
-	
+
 	return biome_closest ? biome_closest : (Biome *)m_elements[0];
 }
+
+void BiomeManager::clear()
+{
+	for (size_t i = 1; i < m_elements.size(); i++) {
+		Biome *b = (Biome *)m_elements[i];
+		if (!b)
+			continue;
+
+		m_resolver->cancelNode(&b->c_top);
+		m_resolver->cancelNode(&b->c_filler);
+		m_resolver->cancelNode(&b->c_stone);
+		m_resolver->cancelNode(&b->c_water);
+		m_resolver->cancelNode(&b->c_dust);
+		m_resolver->cancelNode(&b->c_dust_water);
+	}
+	m_elements.resize(1);
+}
+

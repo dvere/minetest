@@ -590,12 +590,20 @@ int ModApiEnvMod::l_get_perlin(lua_State *L)
 {
 	GET_ENV_PTR;
 
-	int seeddiff = luaL_checkint(L, 1);
-	int octaves = luaL_checkint(L, 2);
-	float persistence = luaL_checknumber(L, 3);
-	float scale = luaL_checknumber(L, 4);
+	NoiseParams params;
 
-	LuaPerlinNoise *n = new LuaPerlinNoise(seeddiff + int(env->getServerMap().getSeed()), octaves, persistence, scale);
+	if (lua_istable(L, 1)) {
+		read_noiseparams(L, 1, &params);
+	} else {
+		params.seed    = luaL_checkint(L, 1);
+		params.octaves = luaL_checkint(L, 2);
+		params.persist = luaL_checknumber(L, 3);
+		params.spread  = v3f(1, 1, 1) * luaL_checknumber(L, 4);
+	}
+
+	params.seed += (int)env->getServerMap().getSeed();
+
+	LuaPerlinNoise *n = new LuaPerlinNoise(&params);
 	*(void **)(lua_newuserdata(L, sizeof(void *))) = n;
 	luaL_getmetatable(L, "PerlinNoise");
 	lua_setmetatable(L, -2);
@@ -608,13 +616,13 @@ int ModApiEnvMod::l_get_perlin_map(lua_State *L)
 {
 	GET_ENV_PTR;
 
-	NoiseParams *np = read_noiseparams(L, 1);
-	if (!np)
+	NoiseParams np;
+	if (!read_noiseparams(L, 1, &np))
 		return 0;
 	v3s16 size = read_v3s16(L, 2);
 
 	int seed = (int)(env->getServerMap().getSeed());
-	LuaPerlinNoiseMap *n = new LuaPerlinNoiseMap(np, seed, size);
+	LuaPerlinNoiseMap *n = new LuaPerlinNoiseMap(&np, seed, size);
 	*(void **)(lua_newuserdata(L, sizeof(void *))) = n;
 	luaL_getmetatable(L, "PerlinNoiseMap");
 	lua_setmetatable(L, -2);

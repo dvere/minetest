@@ -55,6 +55,7 @@ Environment::Environment():
 	m_enable_day_night_ratio_override(false),
 	m_day_night_ratio_override(0.0f)
 {
+	m_cache_enable_shaders = g_settings->getBool("enable_shaders");
 }
 
 Environment::~Environment()
@@ -206,8 +207,7 @@ u32 Environment::getDayNightRatio()
 {
 	if(m_enable_day_night_ratio_override)
 		return m_day_night_ratio_override;
-	bool smooth = g_settings->getBool("enable_shaders");
-	return time_to_daynight_ratio(m_time_of_day_f*24000, smooth);
+	return time_to_daynight_ratio(m_time_of_day_f*24000, m_cache_enable_shaders);
 }
 
 void Environment::setTimeOfDaySpeed(float speed)
@@ -1669,7 +1669,7 @@ void ServerEnvironment::activateObjects(MapBlock *block, u32 dtime_s)
 	if(block==NULL)
 		return;
 	// Ignore if no stored objects (to not set changed flag)
-	if(block->m_static_objects.m_stored.size() == 0)
+	if(block->m_static_objects.m_stored.empty())
 		return;
 	verbosestream<<"ServerEnvironment::activateObjects(): "
 			<<"activating objects of block "<<PP(block->getPos())

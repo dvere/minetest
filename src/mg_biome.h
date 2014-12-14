@@ -21,7 +21,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define MG_BIOME_HEADER
 
 #include "mapgen.h"
-#include "noise.h"
+
+struct NoiseParams;
 
 enum BiomeType
 {
@@ -32,16 +33,13 @@ enum BiomeType
 	BIOME_TYPE_FLAT
 };
 
-extern NoiseParams nparams_biome_def_heat;
-extern NoiseParams nparams_biome_def_humidity;
-
-
 class Biome : public GenElement {
 public:
 	u32 flags;
 
 	content_t c_top;
 	content_t c_filler;
+	content_t c_stone;
 	content_t c_water;
 	content_t c_dust;
 	content_t c_dust_water;
@@ -60,9 +58,6 @@ public:
 	static const char *ELEMENT_TITLE;
 	static const size_t ELEMENT_LIMIT = 0x100;
 
-	NoiseParams *np_heat;
-	NoiseParams *np_humidity;
-
 	BiomeManager(IGameDef *gamedef);
 	~BiomeManager();
 
@@ -71,9 +66,12 @@ public:
 		return new Biome;
 	}
 
+	void clear();
+
 	void calcBiomes(s16 sx, s16 sy, float *heat_map, float *humidity_map,
 		s16 *height_map, u8 *biomeid_map);
 	Biome *getBiome(float heat, float humidity, s16 y);
 };
 
 #endif
+

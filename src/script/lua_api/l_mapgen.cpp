@@ -30,6 +30,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "mg_ore.h"
 #include "mg_decoration.h"
 #include "mg_schematic.h"
+#include "mapgen_v5.h"
 #include "mapgen_v7.h"
 #include "settings.h"
 #include "main.h"
@@ -84,7 +85,114 @@ struct EnumString ModApiMapgen::es_Rotation[] =
 };
 
 
-static void read_schematic_replacements(lua_State *L,
+///////////////////////////////////////////////////////////////////////////////
+
+
+bool read_schematic(lua_State *L, int index, Schematic *schem,
+	INodeDefManager *ndef, std::map<std::string, std::string> &replace_names)
+{
+	//// Get schematic size
+	lua_getfield(L, index, "size");
+	v3s16 size = read_v3s16(L, -1);
+	lua_pop(L, 1);
+
+	//// Get schematic data
+	lua_getfield(L, index, "data");
+	luaL_checktype(L, -1, LUA_TTABLE);
+
+	int numnodes = size.X * size.Y * size.Z;
+	MapNode *schemdata = new MapNode[numnodes];
+	int i = 0;
+
+	lua_pushnil(L);
+	while (lua_next(L, -2)) {
+		if (i >= numnodes) {
+			i++;
+			lua_pop(L, 1);
+			continue;
+		}
+
+		// same as readnode, except param1 default is MTSCHEM_PROB_CONST
+		lua_getfield(L, -1, "name");
+		std::string name = luaL_checkstring(L, -1);
+		lua_pop(L, 1);
+
+		u8 param1;
+		lua_getfield(L, -1, "param1");
+		param1 = !lua_isnil(L, -1) ? lua_tonumber(L, -1) : MTSCHEM_PROB_ALWAYS;
+		lua_pop(L, 1);
+
+		u8 param2;
+		lua_getfield(L, -1, "param2");
+		param2 = !lua_isnil(L, -1) ? lua_tonumber(L, -1) : 0;
+		lua_pop(L, 1);
+
+		std::map<std::string, std::string>::iterator it;
+		it = replace_names.find(name);
+		if (it != replace_names.end())
+			name = it->second;
+
+		schemdata[i] = MapNode(ndef, name, param1, param2);
+
+		i++;
+		lua_pop(L, 1);
+	}
+
+	if (i != numnodes) {
+		errorstream << "read_schematic: incorrect number of "
+			"nodes provided in raw schematic data (got " << i <<
+			", expected " << numnodes << ")." << std::endl;
+		delete schemdata;
+		return false;
+	}
+
+	//// Get Y-slice probability values (if present)
+	u8 *slice_probs = new u8[size.Y];
+	for (i = 0; i != size.Y; i++)
+		slice_probs[i] = MTSCHEM_PROB_ALWAYS;
+
+	lua_getfield(L, index, "yslice_prob");
+	if (lua_istable(L, -1)) {
+		lua_pushnil(L);
+		while (lua_next(L, -2)) {
+			if (getintfield(L, -1, "ypos", i) && i >= 0 && i < size.Y) {
+				slice_probs[i] = getintfield_default(L, -1,
+					"prob", MTSCHEM_PROB_ALWAYS);
+			}
+			lua_pop(L, 1);
+		}
+	}
+
+	// Here, we read the nodes directly from the INodeDefManager - there is no
+	// need for pending node resolutions so we'll mark this schematic as updated
+	schem->flags       = SCHEM_CIDS_UPDATED;
+
+	schem->size        = size;
+	schem->schemdata   = schemdata;
+	schem->slice_probs = slice_probs;
+	return true;
+}
+
+
+bool get_schematic(lua_State *L, int index, Schematic *schem,
+	INodeDefManager *ndef, std::map<std::string, std::string> &replace_names)
+{
+	if (index < 0)
+		index = lua_gettop(L) + 1 + index;
+
+	if (lua_istable(L, index)) {
+		return read_schematic(L, index, schem, ndef, replace_names);
+	} else if (lua_isstring(L, index)) {
+		NodeResolver *resolver = ndef->getResolver();
+		const char *filename = lua_tostring(L, index);
+		return schem->loadSchematicFromFile(filename, resolver, replace_names);
+	} else {
+		return false;
+	}
+}
+
+
+void read_schematic_replacements(lua_State *L,
 	std::map<std::string, std::string> &replace_names, int index)
 {
 	lua_pushnil(L);
@@ -193,23 +301,21 @@ int ModApiMapgen::l_get_mapgen_object(lua_State *L)
 			return 1;
 		}
 		case MGOBJ_GENNOTIFY: {
+			std::map<std::string, std::vector<v3s16> >event_map;
+			std::map<std::string, std::vector<v3s16> >::iterator it;
+
+			mg->gennotify.getEvents(event_map);
+
 			lua_newtable(L);
-			for (int i = 0; flagdesc_gennotify[i].name; i++) {
-				if (!(emerge->gennotify & flagdesc_gennotify[i].flag))
-					continue;
-
-				std::vector<v3s16> *posvec = mg->gen_notifications[i];
-				if (!posvec)
-					return 0;
-
+			for (it = event_map.begin(); it != event_map.end(); ++it) {
 				lua_newtable(L);
-				for (unsigned int j = 0; j != posvec->size(); j++) {
-					push_v3s16(L, (*posvec)[j]);
+
+				for (size_t j = 0; j != it->second.size(); j++) {
+					push_v3s16(L, it->second[j]);
 					lua_rawseti(L, -2, j + 1);
 				}
-				lua_setfield(L, -2, flagdesc_gennotify[i].name);
 
-				posvec->clear();
+				lua_setfield(L, -2, it->first.c_str());
 			}
 
 			return 1;
@@ -263,41 +369,41 @@ int ModApiMapgen::l_set_mapgen_params(lua_State *L)
 	return 0;
 }
 
-// set_noiseparam_defaults({np1={noise params}, ...})
-// set default values for noise parameters if not present in global settings
-int ModApiMapgen::l_set_noiseparam_defaults(lua_State *L)
+// set_noiseparams(name, noiseparams, set_default)
+// set global config values for noise parameters
+int ModApiMapgen::l_set_noiseparams(lua_State *L)
 {
-	NoiseParams np;
-	std::string val, name;
+	const char *name = luaL_checkstring(L, 1);
 
-	if (!lua_istable(L, 1))
+	NoiseParams np;
+	if (!read_noiseparams(L, 2, &np))
 		return 0;
 
-	lua_pushnil(L);
-	while (lua_next(L, 1)) {
-		if (read_noiseparams_nc(L, -1, &np)) {
-			if (!serializeStructToString(&val, NOISEPARAMS_FMT_STR, &np))
-				continue;
-			if (!lua_isstring(L, -2))
-				continue;
+	bool set_default = lua_isboolean(L, 3) ? lua_toboolean(L, 3) : true;
 
-			name = lua_tostring(L, -2);
-			g_settings->setDefault(name, val);
-		}
-		lua_pop(L, 1);
-	}
+	g_settings->setNoiseParams(name, np, set_default);
 
 	return 0;
 }
 
-// set_gen_notify(string)
+// set_gen_notify(flags, {deco_id_table})
 int ModApiMapgen::l_set_gen_notify(lua_State *L)
 {
 	u32 flags = 0, flagmask = 0;
+	EmergeManager *emerge = getServer(L)->getEmergeManager();
 
 	if (read_flags(L, 1, flagdesc_gennotify, &flags, &flagmask)) {
-		EmergeManager *emerge = getServer(L)->getEmergeManager();
-		emerge->gennotify = flags;
+		emerge->gen_notify_on &= ~flagmask;
+		emerge->gen_notify_on |= flags;
+	}
+
+	if (lua_istable(L, 2)) {
+		lua_pushnil(L);
+		while (lua_next(L, 2)) {
+			if (lua_isnumber(L, -1))
+				emerge->gen_notify_on_deco_ids.insert(lua_tonumber(L, -1));
+			lua_pop(L, 1);
+		}
 	}
 
 	return 0;
@@ -336,6 +442,8 @@ int ModApiMapgen::l_register_biome(lua_State *L)
 		 "mapgen_dirt_with_grass", CONTENT_AIR, &b->c_top);
 	resolver->addNode(getstringfield_default(L, index, "node_filler", ""),
 		"mapgen_dirt", CONTENT_AIR, &b->c_filler);
+	resolver->addNode(getstringfield_default(L, index, "node_stone", ""),
+		"mapgen_stone", CONTENT_AIR, &b->c_stone);
 	resolver->addNode(getstringfield_default(L, index, "node_water", ""),
 		"mapgen_water_source", CONTENT_AIR, &b->c_water);
 	resolver->addNode(getstringfield_default(L, index, "node_dust", ""),
@@ -347,6 +455,27 @@ int ModApiMapgen::l_register_biome(lua_State *L)
 
 	lua_pushinteger(L, id);
 	return 1;
+}
+
+int ModApiMapgen::l_clear_registered_biomes(lua_State *L)
+{
+	BiomeManager *bmgr = getServer(L)->getEmergeManager()->biomemgr;
+	bmgr->clear();
+	return 0;
+}
+
+int ModApiMapgen::l_clear_registered_decorations(lua_State *L)
+{
+	DecorationManager *dmgr = getServer(L)->getEmergeManager()->decomgr;
+	dmgr->clear();
+	return 0;
+}
+
+int ModApiMapgen::l_clear_registered_ores(lua_State *L)
+{
+	OreManager *omgr = getServer(L)->getEmergeManager()->oremgr;
+	omgr->clear();
+	return 0;
 }
 
 // register_decoration({lots of stuff})
@@ -369,7 +498,7 @@ int ModApiMapgen::l_register_decoration(lua_State *L)
 			<< decotype << " not implemented";
 		return 0;
 	}
-	
+
 	deco->name       = getstringfield_default(L, index, "name", "");
 	deco->fill_ratio = getfloatfield_default(L, index, "fill_ratio", 0.02);
 	deco->sidelen    = getintfield_default(L, index, "sidelen", 8);
@@ -386,9 +515,12 @@ int ModApiMapgen::l_register_decoration(lua_State *L)
 	for (size_t i = 0; i != place_on_names.size(); i++)
 		resolver->addNodeList(place_on_names[i], &deco->c_place_on);
 
+	getflagsfield(L, index, "flags", flagdesc_deco, &deco->flags, NULL);
+
 	//// Get NoiseParams to define how decoration is placed
 	lua_getfield(L, index, "noise_params");
-	deco->np = read_noiseparams(L, -1);
+	if (read_noiseparams(L, -1, &deco->np))
+		deco->flags |= DECO_USE_NOISE;
 	lua_pop(L, 1);
 
 	//// Get biomes associated with this decoration (if any)
@@ -474,9 +606,6 @@ bool ModApiMapgen::regDecoSchematic(lua_State *L, INodeDefManager *ndef,
 {
 	int index = 1;
 
-	deco->flags = 0;
-	getflagsfield(L, index, "flags", flagdesc_deco_schematic, &deco->flags, NULL);
-
 	deco->rotation = (Rotation)getenumfield(L, index, "rotation",
 		es_Rotation, ROTATE_0);
 
@@ -538,7 +667,14 @@ int ModApiMapgen::l_register_ore(lua_State *L)
 	getflagsfield(L, index, "flags", flagdesc_ore, &ore->flags, NULL);
 
 	lua_getfield(L, index, "noise_params");
-	ore->np = read_noiseparams(L, -1);
+	if (read_noiseparams(L, -1, &ore->np)) {
+		ore->flags |= OREFLAG_USE_NOISE;
+	} else if (ore->NEEDS_NOISE) {
+		errorstream << "register_ore: specified ore type requires valid "
+			"noise parameters" << std::endl;
+		delete ore;
+		return 0;
+	}
 	lua_pop(L, 1);
 
 	u32 id = oremgr->add(ore);
@@ -661,12 +797,16 @@ void ModApiMapgen::Initialize(lua_State *L, int top)
 	API_FCT(get_mapgen_object);
 
 	API_FCT(set_mapgen_params);
-	API_FCT(set_noiseparam_defaults);
+	API_FCT(set_noiseparams);
 	API_FCT(set_gen_notify);
 
 	API_FCT(register_biome);
 	API_FCT(register_decoration);
 	API_FCT(register_ore);
+
+	API_FCT(clear_registered_biomes);
+	API_FCT(clear_registered_decorations);
+	API_FCT(clear_registered_ores);
 
 	API_FCT(create_schematic);
 	API_FCT(place_schematic);
