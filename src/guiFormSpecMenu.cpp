@@ -76,21 +76,6 @@ static unsigned int font_line_height(gui::IGUIFont *font)
 
 static gui::IGUIFont *select_font_by_line_height(double target_line_height)
 {
-	return g_fontengine->getFont();
-
-/* I have no idea what this is trying to achieve, but scaling the font according
- * to the size of a formspec/dialog does not seem to be a standard (G)UI
- * design and AFAIK no existing nor proposed GUI does this. Besides that it:
- * a) breaks most (current) formspec layouts
- * b) font sizes change depending on the size of the formspec/dialog (see above)
- *    meaning that there is no UI consistency
- * c) the chosen fonts are, in general, probably too large
- *
- * Disabling for now.
- *
- * FIXME
- */
-#if 0
 	// We don't get to directly select a font according to its
 	// baseline-to-baseline height.  Rather, we select by em size.
 	// The ratio between these varies between fonts.  The font
@@ -120,7 +105,6 @@ static gui::IGUIFont *select_font_by_line_height(double target_line_height)
 		}
 	}
 	return g_fontengine->getFont(target_line_height - lohgt < hihgt - target_line_height ? loreq : hireq);
-#endif
 }
 
 GUIFormSpecMenu::GUIFormSpecMenu(irr::IrrlichtDevice* dev,
@@ -1951,7 +1935,7 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 			// wide, including border) just fit into the
 			// default window (800 pixels wide) at 96 DPI
 			// and default scaling (1.00).
-			use_imgsize = 0.53 * screen_dpi * gui_scaling;
+			use_imgsize = 0.5555 * screen_dpi * gui_scaling;
 		} else {
 			// In variable-size mode, we prefer to make the
 			// inventory image size 1/15 of screen height,
@@ -1991,6 +1975,7 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 		spacing = v2s32(use_imgsize*5.0/4, use_imgsize*15.0/13);
 		padding = v2s32(use_imgsize*3.0/8, use_imgsize*3.0/8);
 		double target_font_height = use_imgsize*15.0/13 * 0.4;
+		target_font_height *= g_settings->getFloat("font_size")/TTF_DEFAULT_FONT_SIZE;
 		m_btn_height = use_imgsize*15.0/13 * 0.35;
 
 		m_font = select_font_by_line_height(target_font_height);
